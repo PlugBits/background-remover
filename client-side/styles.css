@@ -1,4 +1,5 @@
 :root {
+  color-scheme: light;
   --bg: #eef2f6;
   --surface: #ffffff;
   --surface-soft: #f8fafc;
@@ -7,9 +8,41 @@
   --muted: #64748b;
   --primary: #2563eb;
   --primary-soft: #dbeafe;
+  --primary-soft-text: #075985;
   --danger: #dc2626;
   --shadow: 0 2px 10px rgba(15, 23, 42, 0.08);
+  --drop-border: #94a3b8;
+  --progress-bg: #e2e8f0;
+  --checker-base: #ffffff;
+  --checker-mark: #d9e2ec;
+  --toast-border: #16a34a;
+  --toast-bg: #dcfce7;
+  --toast-text: #14532d;
   --radius: 6px;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    color-scheme: dark;
+    --bg: #111827;
+    --surface: #1f2937;
+    --surface-soft: #172033;
+    --border: #40506a;
+    --text: #eef2ff;
+    --muted: #aab7cc;
+    --primary: #60a5fa;
+    --primary-soft: #1d3f68;
+    --primary-soft-text: #dbeafe;
+    --danger: #f87171;
+    --shadow: 0 2px 14px rgba(0, 0, 0, 0.35);
+    --drop-border: #64748b;
+    --progress-bg: #334155;
+    --checker-base: #1f2937;
+    --checker-mark: #2f3b4d;
+    --toast-border: #22c55e;
+    --toast-bg: #12351f;
+    --toast-text: #bbf7d0;
+  }
 }
 
 *,
@@ -135,7 +168,7 @@ h1 {
   gap: 10px;
   min-height: 190px;
   padding: 20px;
-  border: 2px dashed #94a3b8;
+  border: 2px dashed var(--drop-border);
   border-radius: var(--radius);
   background: var(--surface-soft);
   text-align: center;
@@ -168,7 +201,7 @@ h1 {
   height: 8px;
   overflow: hidden;
   border-radius: 999px;
-  background: #e2e8f0;
+  background: var(--progress-bg);
 }
 
 .progress-track div {
@@ -200,7 +233,7 @@ h1 {
 .tool-grid button.active {
   border-color: var(--primary);
   background: var(--primary-soft);
-  color: #075985;
+  color: var(--primary-soft-text);
 }
 
 .slider-row {
@@ -385,21 +418,21 @@ h1 {
   z-index: 20;
   max-width: min(360px, calc(100% - 24px));
   padding: 10px 14px;
-  border: 1px solid #16a34a;
+  border: 1px solid var(--toast-border);
   border-radius: var(--radius);
-  background: #dcfce7;
-  color: #14532d;
+  background: var(--toast-bg);
+  color: var(--toast-text);
   font-weight: 800;
   box-shadow: var(--shadow);
 }
 
 .canvas-viewport.checker {
-  background-color: #ffffff;
+  background-color: var(--checker-base);
   background-image:
-    linear-gradient(45deg, #d9e2ec 25%, transparent 25%),
-    linear-gradient(-45deg, #d9e2ec 25%, transparent 25%),
-    linear-gradient(45deg, transparent 75%, #d9e2ec 75%),
-    linear-gradient(-45deg, transparent 75%, #d9e2ec 75%);
+    linear-gradient(45deg, var(--checker-mark) 25%, transparent 25%),
+    linear-gradient(-45deg, var(--checker-mark) 25%, transparent 25%),
+    linear-gradient(45deg, transparent 75%, var(--checker-mark) 75%),
+    linear-gradient(-45deg, transparent 75%, var(--checker-mark) 75%);
   background-position: 0 0, 0 12px, 12px -12px, -12px 0;
   background-size: 24px 24px;
 }
