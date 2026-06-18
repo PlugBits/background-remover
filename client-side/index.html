@@ -61,7 +61,7 @@
       </aside>
 
       <section class="workspace">
-        <div id="canvasViewport" class="canvas-viewport checker">
+        <div class="workspace-bar">
           <div class="canvas-output">
             <select id="exportBackground" aria-label="書き出し背景">
               <option value="transparent">透明PNG</option>
@@ -77,8 +77,11 @@
             <button id="copyButton" type="button" disabled>コピー</button>
             <button id="saveButton" type="button" disabled>PNG保存</button>
           </div>
+        </div>
 
-          <div id="toast" class="toast" hidden></div>
+        <div id="toast" class="toast" hidden></div>
+
+        <div id="canvasViewport" class="canvas-viewport checker">
 
           <div class="view-switch" aria-label="表示切替">
             <button type="button" class="active" data-preview="compare">元画像 + 結果</button>

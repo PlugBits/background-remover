@@ -102,6 +102,15 @@ h1 {
   min-width: 0;
 }
 
+.workspace {
+  position: relative;
+}
+
+.workspace-bar {
+  display: flex;
+  justify-content: flex-end;
+}
+
 .panel,
 .canvas-viewport {
   border: 1px solid var(--border);
@@ -301,7 +310,6 @@ h1 {
   color: #ffffff;
 }
 
-.canvas-output,
 .canvas-actions,
 .canvas-zoom,
 .canvas-rotate {
@@ -316,9 +324,12 @@ h1 {
 }
 
 .canvas-output {
-  top: 12px;
-  left: 12px;
-  gap: 0;
+  display: inline-flex;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  box-shadow: var(--shadow);
 }
 
 .canvas-actions {
@@ -376,10 +387,10 @@ h1 {
 }
 
 .toast {
-  position: absolute;
+  position: fixed;
   right: 12px;
-  bottom: 58px;
-  z-index: 6;
+  bottom: 12px;
+  z-index: 20;
   max-width: min(360px, calc(100% - 24px));
   padding: 10px 14px;
   border: 1px solid #16a34a;
@@ -388,12 +399,6 @@ h1 {
   color: #14532d;
   font-weight: 800;
   box-shadow: var(--shadow);
-}
-
-.toast.error {
-  border-color: #dc2626;
-  background: #fee2e2;
-  color: #7f1d1d;
 }
 
 .canvas-viewport.checker {
@@ -459,11 +464,14 @@ h1 {
   }
 
   .view-switch,
-  .canvas-output,
   .canvas-actions,
   .canvas-zoom,
   .canvas-rotate {
     max-width: calc(100% - 24px);
+  }
+
+  .workspace-bar {
+    justify-content: flex-start;
   }
 
   .view-switch button,

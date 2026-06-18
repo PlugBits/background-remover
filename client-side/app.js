@@ -64,9 +64,8 @@ function setStatus(text, progress = null) {
   if (progress !== null) progressBar.style.width = `${progress}%`;
 }
 
-function showToast(message, type = "success") {
+function showToast(message) {
   toast.textContent = message;
-  toast.classList.toggle("error", type === "error");
   toast.hidden = false;
   window.clearTimeout(toastTimer);
   toastTimer = window.setTimeout(() => {
@@ -583,7 +582,7 @@ async function copyTransparentPng() {
   if (!state) return;
   if (!navigator.clipboard || !window.ClipboardItem) {
     setStatus("このブラウザは画像のクリップボードコピーに対応していません。");
-    showToast("このブラウザは画像コピーに対応していません。", "error");
+    showToast("このブラウザは画像コピーに対応していません。");
     return;
   }
   try {
@@ -596,7 +595,7 @@ async function copyTransparentPng() {
   } catch (error) {
     console.error(error);
     setStatus("クリップボードへのコピーに失敗しました。ブラウザの権限設定を確認してください。");
-    showToast("コピーに失敗しました。", "error");
+    showToast("コピーに失敗しました。");
   }
 }
 
