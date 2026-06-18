@@ -104,6 +104,42 @@
               <output id="edgeContrastValue">20</output>
               <input id="edgeContrast" type="range" min="0" max="100" value="20">
             </label>
+
+            <label class="field">
+              <span>修正モード</span>
+              <select id="editMode">
+                <option value="off">OFF</option>
+                <option value="candidate">復元候補</option>
+                <option value="clickRestore">クリック復元</option>
+                <option value="restoreBrush">復元ブラシ</option>
+                <option value="eraseBrush">削除ブラシ</option>
+              </select>
+            </label>
+
+            <label class="check-row">
+              <input id="showCandidates" type="checkbox">
+              <span>復元候補を表示</span>
+            </label>
+
+            <label class="slider-row" for="brushSize">
+              <span>ブラシサイズ</span>
+              <small>なぞる範囲を調整します</small>
+              <output id="brushSizeValue">36</output>
+              <input id="brushSize" type="range" min="10" max="120" value="36">
+            </label>
+
+            <label class="slider-row" for="featherSize">
+              <span>ぼかし</span>
+              <small>境界を自然になじませます</small>
+              <output id="featherSizeValue">8</output>
+              <input id="featherSize" type="range" min="0" max="40" value="8">
+            </label>
+
+            <div class="edit-actions">
+              <button id="undoButton" type="button" disabled>Undo</button>
+              <button id="redoButton" type="button" disabled>Redo</button>
+              <button id="resetMaskButton" type="button" disabled>マスクをリセット</button>
+            </div>
           </div>
         </details>
 
@@ -149,12 +185,13 @@
             </div>
 
             <div id="imageViewport" class="image-viewport">
-              <img id="resultImage" class="result-image" alt="整形後の製品写真" hidden>
+              <canvas id="resultImage" class="result-image" aria-label="編集済みの製品写真" hidden></canvas>
+              <canvas id="candidateCanvas" class="candidate-overlay" aria-hidden="true" hidden></canvas>
 
               <div id="compareView" class="compare-view" hidden>
                 <img id="beforeImage" class="compare-before" alt="元画像">
                 <div id="afterClip" class="compare-after-wrap">
-                  <img id="afterImage" class="compare-after" alt="整形後の画像">
+                  <img id="afterImage" class="compare-after" alt="編集済みの画像">
                 </div>
                 <div id="compareHandle" class="compare-handle" aria-hidden="true"></div>
                 <input id="compareSlider" class="compare-slider" type="range" min="0" max="100" value="100" aria-label="Before After 比較">
