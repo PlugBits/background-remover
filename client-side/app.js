@@ -16,6 +16,9 @@ const labelInfo = document.getElementById("labelInfo");
 const undoButton = document.getElementById("undoButton");
 const redoButton = document.getElementById("redoButton");
 const relabelButton = document.getElementById("relabelButton");
+const applyPolygonButton = document.getElementById("applyPolygonButton");
+const undoPointButton = document.getElementById("undoPointButton");
+const clearPolygonButton = document.getElementById("clearPolygonButton");
 const previewBackground = document.getElementById("previewBackground");
 const exportBackground = document.getElementById("exportBackground");
 const zoomOutButton = document.getElementById("zoomOutButton");
@@ -43,6 +46,7 @@ let panY = 0;
 let dragging = false;
 let dragStart = null;
 let lastPointer = null;
+let polygonPoints = [];
 
 function setStatus(text, progress = null) {
   statusText.textContent = text;
@@ -53,6 +57,7 @@ function setTool(tool) {
   currentTool = tool;
   toolButtons.forEach((button) => button.classList.toggle("active", button.dataset.tool === tool));
   interactionCanvas.style.cursor = tool === "pan" ? "grab" : "pointer";
+  clearPolygon();
 }
 
 function setControlsEnabled(enabled) {
@@ -195,7 +200,7 @@ function relabel() {
 function renderAll() {
   renderOutput();
   renderBoundary();
-  clearInteraction();
+  renderInteraction();
 }
 
 function renderOutput() {
@@ -254,6 +259,11 @@ function clearInteraction() {
   interactionCtx.clearRect(0, 0, interactionCanvas.width, interactionCanvas.height);
 }
 
+function renderInteraction() {
+  clearInteraction();
+  drawPolygonGuide();
+}
+
 function highlightLabel(label) {
   clearInteraction();
   if (!state || !label) return;
@@ -270,13 +280,46 @@ function highlightLabel(label) {
 }
 
 function drawSelectionRect(rect) {
-  clearInteraction();
+  renderInteraction();
   if (!rect) return;
   interactionCtx.fillStyle = "rgba(37, 99, 235, 0.16)";
   interactionCtx.strokeStyle = "rgba(37, 99, 235, 0.95)";
   interactionCtx.lineWidth = Math.max(1, 2 / zoom);
   interactionCtx.fillRect(rect.x, rect.y, rect.w, rect.h);
   interactionCtx.strokeRect(rect.x, rect.y, rect.w, rect.h);
+}
+
+function drawPolygonGuide() {
+  updatePolygonButtons();
+  if (!polygonPoints.length) return;
+  interactionCtx.save();
+  interactionCtx.lineWidth = Math.max(2, 2 / zoom);
+  interactionCtx.strokeStyle = "rgba(37, 99, 235, 0.95)";
+  interactionCtx.fillStyle = "rgba(37, 99, 235, 0.14)";
+  interactionCtx.beginPath();
+  interactionCtx.moveTo(polygonPoints[0].x, polygonPoints[0].y);
+  for (let i = 1; i < polygonPoints.length; i += 1) {
+    interactionCtx.lineTo(polygonPoints[i].x, polygonPoints[i].y);
+  }
+  if (polygonPoints.length >= 3) {
+    interactionCtx.closePath();
+    interactionCtx.fill();
+  }
+  interactionCtx.stroke();
+  polygonPoints.forEach((point, index) => {
+    interactionCtx.beginPath();
+    interactionCtx.fillStyle = index === 0 ? "#16a34a" : "#2563eb";
+    interactionCtx.arc(point.x, point.y, Math.max(4, 5 / zoom), 0, Math.PI * 2);
+    interactionCtx.fill();
+  });
+  interactionCtx.restore();
+}
+
+function updatePolygonButtons() {
+  const active = currentTool === "polyFg" || currentTool === "polyBg";
+  applyPolygonButton.disabled = !state || !active || polygonPoints.length < 3;
+  undoPointButton.disabled = !state || !active || polygonPoints.length === 0;
+  clearPolygonButton.disabled = !state || !active || polygonPoints.length === 0;
 }
 
 function toggleLabel(label) {
@@ -317,6 +360,89 @@ function applyRect(rect, mode) {
   relabel();
   renderAll();
   setStatus("選択範囲を更新しました。");
+}
+
+function applyPolygon(mode) {
+  if (!state || polygonPoints.length < 3) return;
+  const bounds = polygonBounds(polygonPoints);
+  pushHistory();
+  for (let y = bounds.y1; y <= bounds.y2; y += 1) {
+    const intersections = polygonIntersections(y + 0.5, polygonPoints);
+    for (let i = 0; i + 1 < intersections.length; i += 2) {
+      const xStart = clamp(Math.floor(intersections[i]), 0, state.width - 1);
+      const xEnd = clamp(Math.ceil(intersections[i + 1]), 0, state.width - 1);
+      for (let x = xStart; x <= xEnd; x += 1) {
+        const p = y * state.width + x;
+        if (mode === "bg") {
+          state.alphaMask[p] = 0;
+        } else if (shouldRestorePixel(x, y, p)) {
+          state.alphaMask[p] = 255;
+        }
+      }
+    }
+  }
+  relabel();
+  renderAll();
+  clearPolygon();
+  setStatus(mode === "fg" ? "囲んだ範囲から部品らしい部分を戻しました。" : "囲んだ範囲を消しました。");
+}
+
+function shouldRestorePixel(x, y, p) {
+  if (state.alphaMask[p] >= 250) return false;
+  const confidence = state.confidenceMap[p];
+  return confidence > 18 || originalHasDetail(x, y);
+}
+
+function originalHasDetail(x, y) {
+  if (x <= 0 || y <= 0 || x >= state.width - 1 || y >= state.height - 1) return false;
+  const data = state.originalImageData.data;
+  const index = (y * state.width + x) * 4;
+  const r = data[index];
+  const g = data[index + 1];
+  const b = data[index + 2];
+  const max = Math.max(r, g, b);
+  const min = Math.min(r, g, b);
+  const saturation = max - min;
+  const left = (y * state.width + x - 1) * 4;
+  const right = (y * state.width + x + 1) * 4;
+  const up = ((y - 1) * state.width + x) * 4;
+  const down = ((y + 1) * state.width + x) * 4;
+  const horizontal = Math.abs(data[left] - data[right]) + Math.abs(data[left + 1] - data[right + 1]) + Math.abs(data[left + 2] - data[right + 2]);
+  const vertical = Math.abs(data[up] - data[down]) + Math.abs(data[up + 1] - data[down + 1]) + Math.abs(data[up + 2] - data[down + 2]);
+  return saturation > 16 || Math.max(horizontal, vertical) > 42;
+}
+
+function polygonBounds(points) {
+  const xs = points.map((point) => point.x);
+  const ys = points.map((point) => point.y);
+  return {
+    x1: clamp(Math.floor(Math.min(...xs)), 0, state.width - 1),
+    x2: clamp(Math.ceil(Math.max(...xs)), 0, state.width - 1),
+    y1: clamp(Math.floor(Math.min(...ys)), 0, state.height - 1),
+    y2: clamp(Math.ceil(Math.max(...ys)), 0, state.height - 1)
+  };
+}
+
+function polygonIntersections(y, points) {
+  const xs = [];
+  for (let i = 0; i < points.length; i += 1) {
+    const a = points[i];
+    const b = points[(i + 1) % points.length];
+    if ((a.y <= y && b.y > y) || (b.y <= y && a.y > y)) {
+      xs.push(a.x + ((y - a.y) * (b.x - a.x)) / (b.y - a.y));
+    }
+  }
+  return xs.sort((a, b) => a - b);
+}
+
+function addPolygonPoint(point) {
+  polygonPoints.push(point);
+  renderInteraction();
+}
+
+function clearPolygon() {
+  polygonPoints = [];
+  renderInteraction();
 }
 
 function canvasPoint(event) {
@@ -446,6 +572,21 @@ interactionCanvas.addEventListener("pointermove", (event) => {
     drawSelectionRect({ x: dragStart.x, y: dragStart.y, w: point.x - dragStart.x, h: point.y - dragStart.y });
     return;
   }
+  if (currentTool === "polyFg" || currentTool === "polyBg") {
+    renderInteraction();
+    if (polygonPoints.length) {
+      interactionCtx.save();
+      interactionCtx.strokeStyle = "rgba(37, 99, 235, 0.55)";
+      interactionCtx.lineWidth = Math.max(1, 1 / zoom);
+      const last = polygonPoints[polygonPoints.length - 1];
+      interactionCtx.beginPath();
+      interactionCtx.moveTo(last.x, last.y);
+      interactionCtx.lineTo(point.x, point.y);
+      interactionCtx.stroke();
+      interactionCtx.restore();
+    }
+    return;
+  }
   if (currentTool === "toggle") {
     const label = state.labelMap[point.y * state.width + point.x];
     highlightLabel(label);
@@ -461,6 +602,11 @@ interactionCanvas.addEventListener("pointerdown", (event) => {
   lastPointer = { x: event.clientX, y: event.clientY };
   if (currentTool === "pan") return;
   const point = canvasPoint(event);
+  if (currentTool === "polyFg" || currentTool === "polyBg") {
+    addPolygonPoint(point);
+    dragging = false;
+    return;
+  }
   if (currentTool === "toggle") {
     toggleLabel(state.labelMap[point.y * state.width + point.x]);
     dragging = false;
@@ -482,6 +628,11 @@ interactionCanvas.addEventListener("pointerup", (event) => {
   }
   dragging = false;
   dragStart = null;
+});
+
+interactionCanvas.addEventListener("dblclick", () => {
+  if (currentTool === "polyFg") applyPolygon("fg");
+  if (currentTool === "polyBg") applyPolygon("bg");
 });
 
 interactionCanvas.addEventListener("pointercancel", () => {
@@ -520,6 +671,15 @@ relabelButton.addEventListener("click", () => {
   renderAll();
   setStatus("島を再計算しました。");
 });
+applyPolygonButton.addEventListener("click", () => {
+  if (currentTool === "polyFg") applyPolygon("fg");
+  if (currentTool === "polyBg") applyPolygon("bg");
+});
+undoPointButton.addEventListener("click", () => {
+  polygonPoints.pop();
+  renderInteraction();
+});
+clearPolygonButton.addEventListener("click", clearPolygon);
 zoomOutButton.addEventListener("click", () => {
   zoomAtCenter(zoom / 1.25);
 });

@@ -38,13 +38,21 @@
             <strong>マスク修正</strong>
             <span id="labelInfo">島: -</span>
           </div>
-          <p class="tool-help">消えた部品は「選んだ範囲を戻す」で囲むと元画像から戻せます。余計に残った背景は「選んだ範囲を消す」で囲んでください。</p>
+          <p class="tool-help">細い部品は「点で囲んで戻す」で外周をクリックして囲み、最後に実行します。余計に残った背景は「点で囲んで消す」で囲んでください。</p>
           <div class="tool-grid">
             <button type="button" class="active" data-tool="toggle">島を切替</button>
-            <button type="button" data-tool="rectFg">選んだ範囲を戻す</button>
-            <button type="button" data-tool="rectBg">選んだ範囲を消す</button>
-            <button type="button" data-tool="threshold">選んだ範囲を締め直す</button>
+            <button type="button" data-tool="polyFg">点で囲んで戻す</button>
+            <button type="button" data-tool="polyBg">点で囲んで消す</button>
+            <button type="button" data-tool="rectFg">四角で戻す</button>
+            <button type="button" data-tool="rectBg">四角で消す</button>
+            <button type="button" data-tool="threshold">範囲を締め直す</button>
             <button type="button" data-tool="pan">パン</button>
+          </div>
+
+          <div class="action-row">
+            <button id="applyPolygonButton" type="button" disabled>囲みを実行</button>
+            <button id="undoPointButton" type="button" disabled>点を戻す</button>
+            <button id="clearPolygonButton" type="button" disabled>囲みをクリア</button>
           </div>
 
           <label class="slider-row" for="thresholdSlider">
