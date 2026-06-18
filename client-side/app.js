@@ -48,6 +48,7 @@ let zoom = 1;
 let panX = 0;
 let panY = 0;
 let dragging = false;
+let rightButtonPanning = false;
 let dragStart = null;
 let lastPointer = null;
 let polygonPoints = [];
@@ -60,9 +61,17 @@ function setStatus(text, progress = null) {
 function setTool(tool) {
   currentTool = tool;
   toolButtons.forEach((button) => button.classList.toggle("active", button.dataset.tool === tool));
-  interactionCanvas.style.cursor = tool === "pan" ? "grab" : "pointer";
+  updateCanvasCursor();
   clearPolygon();
   updateCanvasActions();
+}
+
+function updateCanvasCursor() {
+  if (rightButtonPanning) {
+    interactionCanvas.style.cursor = "grabbing";
+  } else {
+    interactionCanvas.style.cursor = currentTool === "pan" ? "grab" : "pointer";
+  }
 }
 
 function setControlsEnabled(enabled) {
@@ -571,7 +580,7 @@ viewport.addEventListener("wheel", (event) => {
 interactionCanvas.addEventListener("pointermove", (event) => {
   if (!state) return;
   const point = canvasPoint(event);
-  if (dragging && currentTool === "pan") {
+  if (dragging && (currentTool === "pan" || rightButtonPanning)) {
     panX += event.clientX - lastPointer.x;
     panY += event.clientY - lastPointer.y;
     lastPointer = { x: event.clientX, y: event.clientY };
@@ -610,6 +619,15 @@ interactionCanvas.addEventListener("pointerdown", (event) => {
   interactionCanvas.setPointerCapture(event.pointerId);
   dragging = true;
   lastPointer = { x: event.clientX, y: event.clientY };
+  if (event.button === 2) {
+    rightButtonPanning = true;
+    updateCanvasCursor();
+    return;
+  }
+  if (event.button !== 0) {
+    dragging = false;
+    return;
+  }
   if (currentTool === "pan") return;
   const point = canvasPoint(event);
   if (currentTool === "polyFg" || currentTool === "polyBg") {
@@ -633,6 +651,8 @@ interactionCanvas.addEventListener("pointerup", (event) => {
     if (Math.abs(rect.w) > 2 && Math.abs(rect.h) > 2) applyRectThreshold(rect);
   }
   dragging = false;
+  rightButtonPanning = false;
+  updateCanvasCursor();
   dragStart = null;
 });
 
@@ -643,7 +663,13 @@ interactionCanvas.addEventListener("dblclick", () => {
 
 interactionCanvas.addEventListener("pointercancel", () => {
   dragging = false;
+  rightButtonPanning = false;
+  updateCanvasCursor();
   dragStart = null;
+});
+
+interactionCanvas.addEventListener("contextmenu", (event) => {
+  event.preventDefault();
 });
 
 thresholdSlider.addEventListener("input", () => {
