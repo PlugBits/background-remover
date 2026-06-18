@@ -1,7 +1,9 @@
 (function () {
-  const MAX_FILE_SIZE = 5 * 1024 * 1024;
-  const API_MAX_DIMENSION = 1800;
-  const API_JPEG_QUALITY = 0.86;
+  const SOURCE_MAX_FILE_SIZE = 20 * 1024 * 1024;
+  const API_PAYLOAD_MAX_SIZE = 5 * 1024 * 1024;
+  const API_MAX_DIMENSION = 2400;
+  const API_MIN_DIMENSION = 1200;
+  const API_JPEG_QUALITY = 0.88;
   const ACCEPTED_TYPES = new Set(["image/png", "image/jpeg"]);
   const CONFIG = window.BACKGROUND_REMOVER_CONFIG || {};
   const RATE_LIMIT_COUNT = 3;
@@ -191,7 +193,7 @@
 
   function validateFile(file) {
     if (!ACCEPTED_TYPES.has(file.type)) return "PNG / JPG / JPEG のみ対応しています。";
-    if (file.size > MAX_FILE_SIZE) return "5MBを超えています。";
+    if (file.size > SOURCE_MAX_FILE_SIZE) return "20MBを超えています。";
     return "";
   }
 
@@ -402,7 +404,34 @@
 
   async function prepareApiFile(file) {
     const bitmap = await createImageBitmap(file);
-    const scale = Math.min(1, API_MAX_DIMENSION / Math.max(bitmap.width, bitmap.height));
+    let maxDimension = Math.min(API_MAX_DIMENSION, Math.max(bitmap.width, bitmap.height));
+    let quality = API_JPEG_QUALITY;
+    let blob = null;
+
+    while (maxDimension >= API_MIN_DIMENSION) {
+      blob = await encodeApiImage(bitmap, maxDimension, quality);
+      if (blob.size <= API_PAYLOAD_MAX_SIZE) break;
+
+      if (quality > 0.72) {
+        quality -= 0.08;
+      } else {
+        maxDimension = Math.floor(maxDimension * 0.82);
+        quality = API_JPEG_QUALITY;
+      }
+    }
+
+    bitmap.close();
+
+    if (!blob) throw new Error("画像の軽量化に失敗しました。");
+    if (blob.size > API_PAYLOAD_MAX_SIZE) {
+      throw new Error("軽量化後もAPI送信上限の5MBを超えています。");
+    }
+    if (blob.size >= file.size && file.size <= API_PAYLOAD_MAX_SIZE) return file;
+    return new File([blob], file.name.replace(/\.[^.]+$/, "_api.jpg"), { type: "image/jpeg" });
+  }
+
+  async function encodeApiImage(bitmap, maxDimension, quality) {
+    const scale = Math.min(1, maxDimension / Math.max(bitmap.width, bitmap.height));
     const width = Math.max(1, Math.round(bitmap.width * scale));
     const height = Math.max(1, Math.round(bitmap.height * scale));
 
@@ -411,11 +440,7 @@
     apiContext.fillStyle = "#ffffff";
     apiContext.fillRect(0, 0, width, height);
     apiContext.drawImage(bitmap, 0, 0, width, height);
-    bitmap.close();
-
-    const blob = await canvasToBlob(apiCanvas, "image/jpeg", API_JPEG_QUALITY);
-    if (blob.size >= file.size && scale === 1) return file;
-    return new File([blob], file.name.replace(/\.[^.]+$/, "_api.jpg"), { type: "image/jpeg" });
+    return canvasToBlob(apiCanvas, "image/jpeg", quality);
   }
 
   async function callRemoveBackground(file) {
@@ -582,7 +607,7 @@
 
   function updateCompareSlider() {
     const value = Number(compareSlider.value);
-    afterClip.style.width = `${value}%`;
+    afterClip.style.clipPath = `inset(0 ${100 - value}% 0 0)`;
     compareHandle.style.left = `${value}%`;
   }
 

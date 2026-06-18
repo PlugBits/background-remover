@@ -549,8 +549,7 @@ h1 {
 
 .compare-after-wrap {
   position: absolute;
-  inset: 0 auto 0 0;
-  width: 100%;
+  inset: 0;
   overflow: hidden;
   background-color: #ffffff;
   background-image:
@@ -560,6 +559,8 @@ h1 {
     linear-gradient(-45deg, transparent 75%, #d9e2ec 75%);
   background-position: 0 0, 0 12px, 12px -12px, -12px 0;
   background-size: 24px 24px;
+  clip-path: inset(0 0 0 0);
+  will-change: clip-path;
 }
 
 .compare-handle {
