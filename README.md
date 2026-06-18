@@ -1,116 +1,56 @@
 # Product Photo Cleaner
 
-製品写真・部品写真・工具写真・治具写真を、プレゼン資料、作業標準書、QC資料などに貼りやすい画像へ整えるWebツールです。
+製品写真・部品写真・工具写真・治具写真を、PowerPoint、作業標準書、QC資料などに貼りやすい画像へ整えるWebツールです。
 
-フロントエンドは GitHub Pages で公開する静的Webアプリ、背景除去処理は Cloud Run 上の Python API で実行します。
+現在のメイン版は、画像をサーバーへ送らずにブラウザ内で背景除去とマスク修正を行います。GitHub Pagesだけで公開でき、Cloud Run APIは不要です。
 
 ## 主な機能
 
-- 背景除去
-- 自動余白除去
-- 中央配置
-- 背景色切替: 透明 / 白 / 黒
-- 用途別プリセット
-- Before / After 比較スライダー
-- PNG / JPEG 保存
-- 複数画像の直列一括処理
-- ZIPダウンロード
-- API送信前の画像軽量化
-- 復元候補表示
-- クリック復元
-- 復元ブラシ / 削除ブラシ
+- ブラウザ内背景除去
+- 元画像RGB + 編集済みAlphaマスクによる再合成
+- 消えた部品を「点で囲んで戻す」
+- 余計な背景を「点で囲んで消す」
+- 島単位の前景/背景切替
+- ズーム / パン / 右クリックパン
+- 回転: 1度単位、45度、90度
+- 透明PNG / 白背景PNG / 黒背景PNG / 検査グレーPNG
+- コピー: 透過PNGをクリップボードへコピー
+- 自動余白詰め
+- 出力サイズ: 高画質 / 標準 / 軽量
 - Undo / Redo
+- キーボードショートカット
+- ブラウザ設定に従うダークモード
 
-## 用途プリセット
+## キーボードショートカット
 
-- PowerPoint資料: 透過PNG、余白少なめ、中央配置
-- 作業標準書: 白背景、余白中、中央配置
-- QCレポート: 白背景、余白中、中央配置
-- 部品写真: 白背景を初期値にし、黒背景表示でも確認しやすい設定
-- カスタム: 背景、余白、出力形式、フチ除去、輪郭補正を手動設定
+- `Esc`: パンに戻る
+- `Ctrl+Z`: 点選択中は点を1つ戻す。点がなければマスク編集を元に戻す
+- `Enter`: 点で囲むモード中に囲みを実行
+- `Delete`: 点で囲むモード中に囲みをクリア
 
 ## 構成
 
-- `index.html` / `styles.css` / `app.js`: GitHub Pages 用フロント
-- `client-side/`: ブラウザ内完結版の試作ページ
-- `config.js`: Cloud Run API URL
-- `api/`: Cloud Run 用 FastAPI アプリ
-- `.github/workflows/pages.yml`: GitHub Pages デプロイ
+- `index.html` / `styles.css` / `app.js`: GitHub Pagesで公開するブラウザ内完結版
+- `client-side/index.html`: 旧 `/client-side/` URL向けのルートリダイレクト
+- `.github/workflows/pages.yml`: GitHub Pagesデプロイ
+- `bg-removal-spec.md`: ブラウザ内完結版の仕様メモ
 
-## API
+## 通信について
 
-背景除去APIは既存の `/remove-background` を使います。
+画像データはサーバーへ送信しません。
 
-```js
-window.BACKGROUND_REMOVER_CONFIG = {
-  apiEndpoint: "https://your-service.run.app/remove-background"
-};
-```
+初回利用時のみ、`@imgly/background-removal` が背景除去モデルをブラウザへダウンロードします。モデル取得後の処理、マスク修正、コピー、保存はブラウザ内で実行されます。
 
-## 制限
+## 入力と出力
 
 - 入力: PNG / JPG / JPEG
-- 最大サイズ: 元画像 1ファイル 20MB
-- API送信サイズ: 軽量化後 5MB 以下
-- 出力: PNG / JPEG
+- 画像処理: 長辺1800px以内に軽量化してブラウザ内で実行
+- 出力: PNG
+- 出力背景: 透明 / 白 / 黒 / 検査グレー
 - アップロード画像は保存しません
-- 複数画像はAPI負荷を避けるため1枚ずつ直列処理します
-- API送信前にブラウザ側で長辺2400px以内、JPEG品質0.88を目安に軽量化します
-- 軽量化後も5MBを超える場合は、品質と寸法を段階的に下げて5MB以内に収めます
-
-## マスク編集
-
-背景除去後の保存画像は、AI処理後画像のRGBではなく、元画像RGBと編集済みAlphaマスクから再合成します。
-
-- RGB: API送信前に軽量化した元画像
-- Alpha: `rembg` の透過PNGから抽出したマスク
-- 復元: Alphaを255側へ戻す
-- 削除: Alphaを0側へ下げる
-
-これにより、トグルクランプのアーム、細いシャフト、ボルト、配線、治具の一部、金属エッジなどが誤って消えた場合でも、ブラウザ上で必要な範囲を復元できます。
-
-## Cloud Run API
-
-ローカル確認:
-
-```bash
-cd api
-python -m venv .venv
-. .venv/bin/activate
-pip install -r requirements.txt
-uvicorn main:app --reload --port 8080
-```
-
-Cloud Run へのデプロイ例:
-
-```bash
-gcloud run deploy background-remover-api \
-  --source ./api \
-  --region asia-northeast1 \
-  --allow-unauthenticated \
-  --set-env-vars ALLOWED_ORIGINS=https://YOUR_USER.github.io \
-  --memory 2Gi \
-  --cpu 1 \
-  --max-instances 1
-```
-
-`rembg` の初回モデル読み込みが重い場合があるため、メモリは `2Gi` を推奨します。
 
 ## GitHub Pages
 
-`main` ブランチへ push すると GitHub Actions で Pages 用ファイルが公開されます。
+`main` ブランチへpushすると、GitHub ActionsでPages用ファイルが公開されます。
 
-Tools ポータルには、公開後の GitHub Pages URL を追加してください。
-
-## ブラウザ内完結版
-
-`/client-side/` に、Cloud Runを使わずブラウザ内で背景除去とマスク修正を行う別パターンを追加しています。
-
-- 画像データはサーバーへ送信しません
-- 初回のみ背景除去モデルのダウンロード通信が発生します
-- クリックトグルでConnected Componentの島を前景/背景に反転できます
-- 矩形選択で一括前景化/背景化できます
-- 選択範囲内だけconfidence mapからしきい値再適用できます
-- Undo/Redo、ズーム/パン、境界線表示、PNG保存に対応しています
-
-完全オフライン化には、次段階でService Workerによるモデルキャッシュが必要です。
+Toolsポータルには、ルートのGitHub Pages URLを登録してください。

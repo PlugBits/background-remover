@@ -1,980 +1,904 @@
-(function () {
-  const SOURCE_MAX_FILE_SIZE = 20 * 1024 * 1024;
-  const API_PAYLOAD_MAX_SIZE = 5 * 1024 * 1024;
-  const API_MAX_DIMENSION = 2400;
-  const API_MIN_DIMENSION = 1200;
-  const API_JPEG_QUALITY = 0.88;
-  const ACCEPTED_TYPES = new Set(["image/png", "image/jpeg"]);
-  const CONFIG = window.BACKGROUND_REMOVER_CONFIG || {};
-  const RATE_LIMIT_COUNT = 3;
-  const RATE_LIMIT_WINDOW_MS = 60 * 1000;
-  const HISTORY_LIMIT = 10;
+import { removeBackground } from "https://cdn.jsdelivr.net/npm/@imgly/background-removal@1.6.0/+esm";
 
-  const PRESETS = {
-    ppt: { summary: "透過PNG・余白小", background: "transparent", margin: "small", format: "png", center: true, alphaCutoff: 24, edgeContrast: 20 },
-    work: { summary: "白背景・余白中", background: "white", margin: "medium", format: "png", center: true, alphaCutoff: 20, edgeContrast: 15 },
-    qc: { summary: "白背景・中央配置", background: "white", margin: "medium", format: "png", center: true, alphaCutoff: 24, edgeContrast: 20 },
-    parts: { summary: "部品写真・背景切替", background: "white", margin: "small", format: "png", center: true, alphaCutoff: 30, edgeContrast: 28 },
-    custom: { summary: "カスタム設定", background: "transparent", margin: "small", format: "png", center: true, alphaCutoff: 24, edgeContrast: 20 }
-  };
+const MAX_DIMENSION = 1800;
+const HISTORY_LIMIT = 12;
+const MIN_ZOOM = 0.08;
+const MAX_ZOOM = 10;
+const INITIAL_ALPHA_THRESHOLD = 128;
+const OUTPUT_PADDING = 12;
 
-  const MARGIN_RATIO = { none: 0, small: 0.04, medium: 0.10, large: 0.18 };
+const fileInput = document.getElementById("fileInput");
+const selectButton = document.getElementById("selectButton");
+const dropZone = document.getElementById("dropZone");
+const statusText = document.getElementById("statusText");
+const progressBar = document.getElementById("progressBar");
+const toolButtons = document.querySelectorAll("[data-tool]");
+const previewButtons = document.querySelectorAll("[data-preview]");
+const showBoundary = document.getElementById("showBoundary");
+const labelInfo = document.getElementById("labelInfo");
+const undoButton = document.getElementById("undoButton");
+const redoButton = document.getElementById("redoButton");
+const relabelButton = document.getElementById("relabelButton");
+const canvasActions = document.getElementById("canvasActions");
+const applyPolygonButton = document.getElementById("applyPolygonButton");
+const undoPointButton = document.getElementById("undoPointButton");
+const clearPolygonButton = document.getElementById("clearPolygonButton");
+const exportBackground = document.getElementById("exportBackground");
+const outputSize = document.getElementById("outputSize");
+const zoomOutButton = document.getElementById("zoomOutButton");
+const zoomResetButton = document.getElementById("zoomResetButton");
+const zoomInButton = document.getElementById("zoomInButton");
+const rotateButtons = document.querySelectorAll("[data-rotate]");
+const rotateAngleLabel = document.getElementById("rotateAngleLabel");
+const copyButton = document.getElementById("copyButton");
+const saveButton = document.getElementById("saveButton");
+const viewport = document.getElementById("canvasViewport");
+const stack = document.getElementById("canvasStack");
+const outputCanvas = document.getElementById("outputCanvas");
+const boundaryCanvas = document.getElementById("boundaryCanvas");
+const interactionCanvas = document.getElementById("interactionCanvas");
+const emptyState = document.getElementById("emptyState");
+const toast = document.getElementById("toast");
 
-  const fileInput = document.getElementById("fileInput");
-  const selectButton = document.getElementById("selectButton");
-  const dropZone = document.getElementById("dropZone");
-  const presetSummary = document.getElementById("presetSummary");
-  const presetButtons = document.querySelectorAll("[data-preset]");
-  const outputBackground = document.getElementById("outputBackground");
-  const marginSize = document.getElementById("marginSize");
-  const centerObject = document.getElementById("centerObject");
-  const outputFormat = document.getElementById("outputFormat");
-  const alphaCutoff = document.getElementById("alphaCutoff");
-  const edgeContrast = document.getElementById("edgeContrast");
-  const alphaCutoffValue = document.getElementById("alphaCutoffValue");
-  const edgeContrastValue = document.getElementById("edgeContrastValue");
-  const editMode = document.getElementById("editMode");
-  const showCandidates = document.getElementById("showCandidates");
-  const brushSize = document.getElementById("brushSize");
-  const featherSize = document.getElementById("featherSize");
-  const brushSizeValue = document.getElementById("brushSizeValue");
-  const featherSizeValue = document.getElementById("featherSizeValue");
-  const undoButton = document.getElementById("undoButton");
-  const redoButton = document.getElementById("redoButton");
-  const resetMaskButton = document.getElementById("resetMaskButton");
-  const progressText = document.getElementById("progressText");
-  const progressBar = document.getElementById("progressBar");
-  const fileList = document.getElementById("fileList");
-  const failureList = document.getElementById("failureList");
-  const saveButton = document.getElementById("saveButton");
-  const compareButton = document.getElementById("compareButton");
-  const resultStage = document.getElementById("resultStage");
-  const emptyState = document.getElementById("emptyState");
-  const resultCanvasShell = document.getElementById("resultCanvas");
-  const activeFileName = document.getElementById("activeFileName");
-  const activeFileStatus = document.getElementById("activeFileStatus");
-  const outputSummary = document.getElementById("outputSummary");
-  const resultCanvas = document.getElementById("resultImage");
-  const resultContext = resultCanvas.getContext("2d");
-  const candidateCanvas = document.getElementById("candidateCanvas");
-  const candidateContext = candidateCanvas.getContext("2d");
-  const compareView = document.getElementById("compareView");
-  const beforeImage = document.getElementById("beforeImage");
-  const afterImage = document.getElementById("afterImage");
-  const afterClip = document.getElementById("afterClip");
-  const compareHandle = document.getElementById("compareHandle");
-  const compareSlider = document.getElementById("compareSlider");
-  const processingOverlay = document.getElementById("processingOverlay");
-  const processingText = document.getElementById("processingText");
-  const viewBgButtons = document.querySelectorAll("[data-view-bg]");
+const outputCtx = outputCanvas.getContext("2d");
+const boundaryCtx = boundaryCanvas.getContext("2d");
+const interactionCtx = interactionCanvas.getContext("2d");
+const tempCanvas = document.createElement("canvas");
+const tempCtx = tempCanvas.getContext("2d", { willReadFrequently: true });
 
-  const apiCanvas = document.createElement("canvas");
-  const apiContext = apiCanvas.getContext("2d");
-  const workCanvas = document.createElement("canvas");
-  const workContext = workCanvas.getContext("2d", { willReadFrequently: true });
-  const outputCanvas = document.createElement("canvas");
-  const outputContext = outputCanvas.getContext("2d");
+let state = null;
+let currentTool = "pan";
+let previewMode = "compare";
+let rotationAngle = 0;
+let zoom = 1;
+let panX = 0;
+let panY = 0;
+let dragging = false;
+let rightButtonPanning = false;
+let lastPointer = null;
+let polygonPoints = [];
+let toastTimer = null;
 
-  let items = [];
-  let activeId = null;
-  let currentPreset = "ppt";
-  let processing = false;
-  let compareMode = false;
-  let requestTimestamps = [];
-  let drawing = false;
-  let renderQueued = false;
+function setStatus(text, progress = null) {
+  statusText.textContent = text;
+  if (progress !== null) progressBar.style.width = `${progress}%`;
+}
 
-  function endpoint() {
-    return String(CONFIG.apiEndpoint || "").trim();
+function showToast(message) {
+  toast.textContent = message;
+  toast.hidden = false;
+  window.clearTimeout(toastTimer);
+  toastTimer = window.setTimeout(() => {
+    toast.hidden = true;
+  }, 2000);
+}
+
+function setTool(tool) {
+  currentTool = tool;
+  toolButtons.forEach((button) => button.classList.toggle("active", button.dataset.tool === tool));
+  updateCanvasCursor();
+  clearPolygon();
+  updateCanvasActions();
+}
+
+function updateCanvasCursor() {
+  const cursor = currentTool === "pan" ? "grab" : "pointer";
+  if (rightButtonPanning) {
+    interactionCanvas.style.cursor = "grabbing";
+    viewport.style.cursor = "grabbing";
+  } else {
+    interactionCanvas.style.cursor = cursor;
+    viewport.style.cursor = cursor;
+  }
+}
+
+function setControlsEnabled(enabled) {
+  [relabelButton, zoomOutButton, zoomResetButton, zoomInButton, ...rotateButtons, copyButton, saveButton].forEach((button) => {
+    button.disabled = !enabled;
+  });
+  updateHistoryButtons();
+  updatePolygonButtons();
+}
+
+async function loadFile(file) {
+  if (!file || !/^image\/(png|jpeg)$/.test(file.type)) {
+    showToast("PNG / JPG / JPEG を選択してください。");
+    return;
   }
 
-  function settings() {
-    return {
-      background: outputBackground.value,
-      margin: marginSize.value,
-      format: outputFormat.value,
-      center: centerObject.checked,
-      alphaCutoff: Number(alphaCutoff.value),
-      edgeContrast: Number(edgeContrast.value)
+  setControlsEnabled(false);
+  clearPolygon();
+  setStatus("画像を読み込んでいます。", 8);
+
+  try {
+    const prepared = await prepareImage(file);
+    state = {
+      fileName: file.name,
+      originalImageData: prepared.imageData,
+      confidenceMap: null,
+      alphaMask: null,
+      labelMap: null,
+      labels: [],
+      history: [],
+      redo: [],
+      width: prepared.imageData.width,
+      height: prepared.imageData.height
     };
-  }
+    rotationAngle = 0;
+    rotateAngleLabel.textContent = "0°";
 
-  function brushSettings() {
-    return {
-      size: Number(brushSize.value),
-      feather: Number(featherSize.value)
-    };
-  }
-
-  function setPreset(name) {
-    currentPreset = name;
-    const preset = PRESETS[name];
-    outputBackground.value = preset.background;
-    marginSize.value = preset.margin;
-    outputFormat.value = preset.format;
-    centerObject.checked = preset.center;
-    alphaCutoff.value = preset.alphaCutoff;
-    edgeContrast.value = preset.edgeContrast;
-    presetSummary.textContent = preset.summary;
-    presetButtons.forEach((button) => button.classList.toggle("active", button.dataset.preset === name));
-    updateLabels();
-    refreshOutputSummary();
-  }
-
-  function markCustom() {
-    if (currentPreset === "custom") return;
-    currentPreset = "custom";
-    presetSummary.textContent = PRESETS.custom.summary;
-    presetButtons.forEach((button) => button.classList.toggle("active", button.dataset.preset === "custom"));
-  }
-
-  function updateLabels() {
-    alphaCutoffValue.textContent = alphaCutoff.value;
-    edgeContrastValue.textContent = edgeContrast.value;
-    brushSizeValue.textContent = brushSize.value;
-    featherSizeValue.textContent = featherSize.value;
-  }
-
-  function refreshOutputSummary() {
-    const s = settings();
-    const bgLabel = { transparent: "透明", white: "白背景", black: "黒背景" }[s.background];
-    const marginLabel = { none: "余白なし", small: "余白小", medium: "余白中", large: "余白大" }[s.margin];
-    const formatLabel = s.format.toUpperCase();
-    outputSummary.textContent = `${bgLabel}${formatLabel} / ${marginLabel} / ${s.center ? "中央配置" : "原寸寄せ"}`;
-    saveButton.textContent = successfulItems().length > 1 ? "すべてZIPで保存" : `${formatLabel}保存`;
-  }
-
-  function setBusy(isBusy, text) {
-    processing = isBusy;
-    selectButton.disabled = isBusy;
-    processingOverlay.hidden = !isBusy;
-    if (text) processingText.textContent = text;
-    updateSaveState();
-  }
-
-  function updateSaveState() {
-    const item = activeItem();
-    const successCount = successfulItems().length;
-    saveButton.disabled = processing || successCount === 0;
-    compareButton.disabled = !item || !item.compareUrl;
-    undoButton.disabled = !item || item.history.length === 0;
-    redoButton.disabled = !item || item.redo.length === 0;
-    resetMaskButton.disabled = !item || !item.maskAlpha;
-  }
-
-  function successfulItems() {
-    return items.filter((item) => item.status === "done" && item.finalBlob);
-  }
-
-  function activeItem() {
-    return items.find((item) => item.id === activeId) || null;
-  }
-
-  function validateFile(file) {
-    if (!ACCEPTED_TYPES.has(file.type)) return "PNG / JPG / JPEG のみ対応しています。";
-    if (file.size > SOURCE_MAX_FILE_SIZE) return "20MBを超えています。";
-    return "";
-  }
-
-  function makeCleanName(fileName, format) {
-    const baseName = fileName.replace(/\.[^.]+$/, "") || "image";
-    return `${baseName}_clean.${format === "jpeg" ? "jpg" : "png"}`;
-  }
-
-  function revokeItemUrls(item) {
-    if (item.originalUrl) URL.revokeObjectURL(item.originalUrl);
-    if (item.finalUrl) URL.revokeObjectURL(item.finalUrl);
-    if (item.compareUrl) URL.revokeObjectURL(item.compareUrl);
-  }
-
-  function createItems(files) {
-    items.forEach(revokeItemUrls);
-    items = Array.from(files).map((file, index) => {
-      const error = validateFile(file);
-      return {
-        id: `${Date.now()}-${index}`,
-        file,
-        apiFile: null,
-        originalUrl: URL.createObjectURL(file),
-        removedBlob: null,
-        originalImageData: null,
-        rawMaskAlpha: null,
-        baseMaskAlpha: null,
-        maskAlpha: null,
-        candidateAlpha: null,
-        finalBlob: null,
-        finalUrl: "",
-        compareBlob: null,
-        compareUrl: "",
-        outputName: "",
-        renderMap: null,
-        history: [],
-        redo: [],
-        status: error ? "failed" : "queued",
-        error,
-        progressLabel: error || "待機中",
-        apiSizeLabel: ""
-      };
-    });
-    activeId = items[0] ? items[0].id : null;
-    compareMode = false;
+    sizeCanvases(state.width, state.height);
+    setStatus("ブラウザ内モデルで背景を削除しています。", 24);
+    const removedBlob = await removeBackground(prepared.blob);
+    setStatus("マスクを作成しています。", 74);
+    await initializeMaskFromBlob(removedBlob);
+    relabel();
+    await nextFrame();
+    resetView();
     renderAll();
+    setControlsEnabled(true);
+    setTool("pan");
+    setStatus("処理完了", 100);
+    showToast("背景削除が完了しました。");
+  } catch (error) {
+    console.error(error);
+    setStatus("処理に失敗しました。", 0);
+    showToast(`処理に失敗しました: ${error.message || error}`);
   }
+}
 
-  function renderAll() {
-    renderFileList();
-    renderFailures();
-    renderProgress();
-    renderActive();
-    refreshOutputSummary();
-    updateSaveState();
+async function prepareImage(file) {
+  const bitmap = await createImageBitmap(file);
+  const scale = Math.min(1, MAX_DIMENSION / Math.max(bitmap.width, bitmap.height));
+  const width = Math.max(1, Math.round(bitmap.width * scale));
+  const height = Math.max(1, Math.round(bitmap.height * scale));
+  tempCanvas.width = width;
+  tempCanvas.height = height;
+  tempCtx.clearRect(0, 0, width, height);
+  tempCtx.drawImage(bitmap, 0, 0, width, height);
+  bitmap.close();
+  const imageData = tempCtx.getImageData(0, 0, width, height);
+  const blob = await canvasToBlob(tempCanvas, "image/png");
+  return { imageData, blob };
+}
+
+async function initializeMaskFromBlob(blob) {
+  const bitmap = await createImageBitmap(blob);
+  tempCanvas.width = state.width;
+  tempCanvas.height = state.height;
+  tempCtx.clearRect(0, 0, state.width, state.height);
+  tempCtx.drawImage(bitmap, 0, 0, state.width, state.height);
+  bitmap.close();
+  const removed = tempCtx.getImageData(0, 0, state.width, state.height);
+  state.confidenceMap = new Uint8ClampedArray(state.width * state.height);
+  state.alphaMask = new Uint8ClampedArray(state.width * state.height);
+  for (let i = 0, p = 0; i < removed.data.length; i += 4, p += 1) {
+    const alpha = removed.data[i + 3];
+    state.confidenceMap[p] = alpha;
+    state.alphaMask[p] = alpha >= INITIAL_ALPHA_THRESHOLD ? 255 : 0;
   }
-
-  function renderFileList() {
-    fileList.innerHTML = "";
-    if (!items.length) {
-      fileList.innerHTML = '<p class="empty-list">画像がまだ選択されていません。</p>';
-      return;
-    }
-
-    items.forEach((item) => {
-      const button = document.createElement("button");
-      button.type = "button";
-      button.className = `file-item ${item.id === activeId ? "active" : ""}`;
-      button.dataset.id = item.id;
-      button.innerHTML = `
-        <img src="${item.originalUrl}" alt="">
-        <span>
-          <strong>${escapeHtml(item.file.name)}</strong>
-          <small>${statusLabel(item)}</small>
-        </span>
-      `;
-      button.addEventListener("click", () => {
-        activeId = item.id;
-        compareMode = false;
-        renderAll();
-      });
-      fileList.appendChild(button);
-    });
-  }
-
-  function statusLabel(item) {
-    if (item.status === "queued") return "待機中";
-    if (item.status === "processing") return item.progressLabel || "処理中";
-    if (item.status === "done") return item.apiSizeLabel ? `完了 / API送信 ${item.apiSizeLabel}` : "完了";
-    return item.error || "失敗";
-  }
-
-  function renderFailures() {
-    const failed = items.filter((item) => item.status === "failed");
-    failureList.hidden = failed.length === 0;
-    failureList.innerHTML = failed.length
-      ? `<strong>失敗した画像</strong>${failed.map((item) => `<span>${escapeHtml(item.file.name)}: ${escapeHtml(item.error)}</span>`).join("")}`
-      : "";
-  }
-
-  function renderProgress() {
-    if (!items.length) {
-      progressText.textContent = "未選択";
-      progressBar.style.width = "0%";
-      return;
-    }
-    const finished = items.filter((item) => item.status === "done" || item.status === "failed").length;
-    const total = items.length;
-    const active = items.find((item) => item.status === "processing");
-    progressText.textContent = active ? `${finished + 1} / ${total} 処理中` : `${finished} / ${total} 完了`;
-    progressBar.style.width = `${Math.round((finished / total) * 100)}%`;
-  }
-
-  async function renderActive() {
-    const item = activeItem();
-    emptyState.hidden = Boolean(item);
-    resultCanvasShell.hidden = !item;
-
-    if (!item) return;
-
-    activeFileName.textContent = item.file.name;
-    activeFileStatus.textContent = statusLabel(item);
-    beforeImage.src = item.originalUrl;
-
-    resultCanvas.hidden = !item.finalBlob || compareMode;
-    candidateCanvas.hidden = resultCanvas.hidden || !shouldShowCandidates();
-    compareView.hidden = !item.compareUrl || !compareMode;
-
-    if (item.finalBlob && !compareMode) {
-      await drawBlobToCanvas(item.finalBlob, resultCanvas, resultContext);
-      renderCandidateOverlay(item);
-    }
-
-    if (item.compareUrl) {
-      afterImage.src = item.compareUrl;
-      compareButton.textContent = compareMode ? "結果だけ見る" : "比較を見る";
-      updateCompareSlider();
-    } else {
-      afterImage.removeAttribute("src");
-      compareButton.textContent = "比較を見る";
-    }
-  }
-
-  function shouldShowCandidates() {
-    return showCandidates.checked || editMode.value === "candidate" || editMode.value === "clickRestore";
-  }
-
-  function canClickRestore() {
-    return editMode.value === "candidate" || editMode.value === "clickRestore" || showCandidates.checked;
-  }
-
-  async function drawBlobToCanvas(blob, canvas, context) {
-    const bitmap = await createImageBitmap(blob);
-    canvas.width = bitmap.width;
-    canvas.height = bitmap.height;
-    context.clearRect(0, 0, canvas.width, canvas.height);
-    context.drawImage(bitmap, 0, 0);
-    bitmap.close();
-  }
-
-  function renderCandidateOverlay(item) {
-    candidateCanvas.width = resultCanvas.width;
-    candidateCanvas.height = resultCanvas.height;
-    candidateContext.clearRect(0, 0, candidateCanvas.width, candidateCanvas.height);
-
-    if (!item || !item.candidateAlpha || !item.renderMap || candidateCanvas.hidden) return;
-
-    const { width, height } = candidateCanvas;
-    const overlay = candidateContext.createImageData(width, height);
-    const map = item.renderMap;
-    const sourceWidth = item.originalImageData.width;
-
-    for (let y = 0; y < map.drawHeight; y += 1) {
-      const sourceY = map.sourceY + y;
-      const outY = map.drawY + y;
-      if (outY < 0 || outY >= height) continue;
-
-      for (let x = 0; x < map.drawWidth; x += 1) {
-        const sourceX = map.sourceX + x;
-        const outX = map.drawX + x;
-        if (outX < 0 || outX >= width) continue;
-        if (!item.candidateAlpha[sourceY * sourceWidth + sourceX]) continue;
-
-        const outIndex = (outY * width + outX) * 4;
-        overlay.data[outIndex] = 0;
-        overlay.data[outIndex + 1] = 132;
-        overlay.data[outIndex + 2] = 255;
-        overlay.data[outIndex + 3] = 92;
-      }
-    }
-
-    candidateContext.putImageData(overlay, 0, 0);
-  }
-
-  function escapeHtml(text) {
-    return String(text).replace(/[&<>"']/g, (char) => ({
-      "&": "&amp;",
-      "<": "&lt;",
-      ">": "&gt;",
-      '"': "&quot;",
-      "'": "&#039;"
-    })[char]);
-  }
-
-  function formatSize(bytes) {
-    if (bytes < 1024 * 1024) return `${Math.max(1, Math.round(bytes / 1024))}KB`;
-    return `${(bytes / 1024 / 1024).toFixed(1)}MB`;
-  }
-
-  function wait(ms) {
-    return new Promise((resolve) => setTimeout(resolve, ms));
-  }
-
-  async function waitForRateSlot() {
-    while (true) {
-      const now = Date.now();
-      requestTimestamps = requestTimestamps.filter((time) => now - time < RATE_LIMIT_WINDOW_MS);
-      if (requestTimestamps.length < RATE_LIMIT_COUNT) {
-        requestTimestamps.push(now);
-        return;
-      }
-      const waitMs = RATE_LIMIT_WINDOW_MS - (now - requestTimestamps[0]) + 300;
-      processingText.textContent = `API制限に合わせて待機中 ${Math.ceil(waitMs / 1000)}秒`;
-      await wait(Math.min(waitMs, 5000));
-    }
-  }
-
-  async function processItems() {
-    if (!endpoint()) {
-      setGlobalError("API URL が未設定です。config.js を確認してください。");
-      return;
-    }
-
-    setBusy(true, "処理中");
-    const processable = items.filter((item) => item.status === "queued");
-
-    for (let index = 0; index < processable.length; index += 1) {
-      const item = processable[index];
-      activeId = item.id;
-      item.status = "processing";
-      item.progressLabel = `${index + 1} / ${processable.length} 画像を軽量化中`;
-      renderAll();
-
-      try {
-        item.apiFile = await prepareApiFile(item.file);
-        item.apiSizeLabel = `${formatSize(item.file.size)} → ${formatSize(item.apiFile.size)}`;
-        item.progressLabel = `${index + 1} / ${processable.length} 背景削除中`;
-        renderAll();
-        await waitForRateSlot();
-        item.removedBlob = await callRemoveBackground(item.apiFile);
-        item.progressLabel = "マスクを作成中";
-        renderAll();
-        await initializeMask(item);
-        await renderFinalImage(item);
-        item.status = "done";
-        item.progressLabel = "完了";
-      } catch (error) {
-        item.status = "failed";
-        item.error = error.message || String(error);
-      }
-
-      renderAll();
-    }
-
-    setBusy(false);
-    renderAll();
-  }
-
-  async function prepareApiFile(file) {
-    const bitmap = await createImageBitmap(file);
-    let maxDimension = Math.min(API_MAX_DIMENSION, Math.max(bitmap.width, bitmap.height));
-    let quality = API_JPEG_QUALITY;
-    let blob = null;
-
-    while (maxDimension >= API_MIN_DIMENSION) {
-      blob = await encodeApiImage(bitmap, maxDimension, quality);
-      if (blob.size <= API_PAYLOAD_MAX_SIZE) break;
-
-      if (quality > 0.72) quality -= 0.08;
-      else {
-        maxDimension = Math.floor(maxDimension * 0.82);
-        quality = API_JPEG_QUALITY;
-      }
-    }
-
-    bitmap.close();
-
-    if (!blob) throw new Error("画像の軽量化に失敗しました。");
-    if (blob.size > API_PAYLOAD_MAX_SIZE) throw new Error("軽量化後もAPI送信上限の5MBを超えています。");
-    if (blob.size >= file.size && file.size <= API_PAYLOAD_MAX_SIZE) return file;
-    return new File([blob], file.name.replace(/\.[^.]+$/, "_api.jpg"), { type: "image/jpeg" });
-  }
-
-  async function encodeApiImage(bitmap, maxDimension, quality) {
-    const scale = Math.min(1, maxDimension / Math.max(bitmap.width, bitmap.height));
-    const width = Math.max(1, Math.round(bitmap.width * scale));
-    const height = Math.max(1, Math.round(bitmap.height * scale));
-
-    apiCanvas.width = width;
-    apiCanvas.height = height;
-    apiContext.fillStyle = "#ffffff";
-    apiContext.fillRect(0, 0, width, height);
-    apiContext.drawImage(bitmap, 0, 0, width, height);
-    return canvasToBlob(apiCanvas, "image/jpeg", quality);
-  }
-
-  async function callRemoveBackground(file) {
-    const formData = new FormData();
-    formData.append("file", file);
-    const response = await fetch(endpoint(), { method: "POST", body: formData });
-
-    if (!response.ok) {
-      const errorText = await response.text();
-      throw new Error(errorText || `HTTP ${response.status}`);
-    }
-
-    const blob = await response.blob();
-    if (blob.type && blob.type !== "image/png") throw new Error("APIからPNG以外のデータが返されました。");
-    return blob;
-  }
-
-  async function initializeMask(item) {
-    const removedBitmap = await createImageBitmap(item.removedBlob);
-    const originalBitmap = await createImageBitmap(item.apiFile);
-    const width = removedBitmap.width;
-    const height = removedBitmap.height;
-
-    workCanvas.width = width;
-    workCanvas.height = height;
-    workContext.clearRect(0, 0, width, height);
-    workContext.drawImage(originalBitmap, 0, 0, width, height);
-    item.originalImageData = workContext.getImageData(0, 0, width, height);
-
-    workContext.clearRect(0, 0, width, height);
-    workContext.drawImage(removedBitmap, 0, 0);
-    const removedData = workContext.getImageData(0, 0, width, height);
-    item.rawMaskAlpha = new Uint8ClampedArray(width * height);
-    for (let index = 0, pixel = 0; index < removedData.data.length; index += 4, pixel += 1) {
-      item.rawMaskAlpha[pixel] = removedData.data[index + 3];
-    }
-
-    item.baseMaskAlpha = adjustedMask(item.rawMaskAlpha, settings());
-    item.maskAlpha = new Uint8ClampedArray(item.baseMaskAlpha);
-    item.candidateAlpha = buildCandidateMap(item);
-    item.history = [];
-    item.redo = [];
-    removedBitmap.close();
-    originalBitmap.close();
-  }
-
-  function adjustedMask(rawMask, s) {
-    const adjusted = new Uint8ClampedArray(rawMask.length);
-    const contrast = s.edgeContrast / 100;
-    for (let i = 0; i < rawMask.length; i += 1) {
-      let alpha = rawMask[i];
-      if (alpha <= s.alphaCutoff) alpha = 0;
-      else if (contrast > 0) {
-        const normalized = alpha / 255;
-        const sharpened = (normalized - 0.5) * (1 + contrast * 1.8) + 0.5;
-        alpha = Math.max(0, Math.min(255, Math.round(sharpened * 255)));
-      }
-      adjusted[i] = alpha;
-    }
-    return adjusted;
-  }
-
-  function buildCandidateMap(item) {
-    const { width, height, data } = item.originalImageData;
-    const candidates = new Uint8Array(width * height);
-    for (let y = 1; y < height - 1; y += 1) {
-      for (let x = 1; x < width - 1; x += 1) {
-        const pixel = y * width + x;
-        if (item.maskAlpha[pixel] > 80) continue;
-        if (originalHasDetail(data, width, x, y)) candidates[pixel] = 1;
-      }
-    }
-    return candidates;
-  }
-
-  function originalHasDetail(data, width, x, y) {
-    const index = (y * width + x) * 4;
-    const r = data[index];
-    const g = data[index + 1];
-    const b = data[index + 2];
-    const max = Math.max(r, g, b);
-    const min = Math.min(r, g, b);
-    const saturation = max - min;
-    const brightness = (r + g + b) / 3;
-    const left = ((y * width + x - 1) * 4);
-    const right = ((y * width + x + 1) * 4);
-    const up = (((y - 1) * width + x) * 4);
-    const down = (((y + 1) * width + x) * 4);
-    const horizontal = Math.abs(data[left] - data[right]) + Math.abs(data[left + 1] - data[right + 1]) + Math.abs(data[left + 2] - data[right + 2]);
-    const vertical = Math.abs(data[up] - data[down]) + Math.abs(data[up + 1] - data[down + 1]) + Math.abs(data[up + 2] - data[down + 2]);
-    const edge = Math.max(horizontal, vertical);
-    return brightness > 25 && brightness < 245 && (saturation > 18 || edge > 48);
-  }
-
-  async function renderFinalImage(item) {
-    if (!item.originalImageData || !item.maskAlpha) return;
-    const s = settings();
-    const final = await composeOutput(item, s);
-    const compare = await composeOutput(item, { ...s, background: "transparent", format: "png" });
-
-    if (item.finalUrl) URL.revokeObjectURL(item.finalUrl);
-    if (item.compareUrl) URL.revokeObjectURL(item.compareUrl);
-    item.finalBlob = final.blob;
-    item.finalUrl = URL.createObjectURL(final.blob);
-    item.compareBlob = compare.blob;
-    item.compareUrl = URL.createObjectURL(compare.blob);
-    item.outputName = makeCleanName(item.file.name, final.format);
-    item.renderMap = final.map;
-  }
-
-  async function composeOutput(item, s) {
-    const { width, height, data } = item.originalImageData;
-    const composed = new ImageData(width, height);
-    for (let i = 0, pixel = 0; i < data.length; i += 4, pixel += 1) {
-      composed.data[i] = data[i];
-      composed.data[i + 1] = data[i + 1];
-      composed.data[i + 2] = data[i + 2];
-      composed.data[i + 3] = item.maskAlpha[pixel];
-    }
-
-    workCanvas.width = width;
-    workCanvas.height = height;
-    workContext.putImageData(composed, 0, 0);
-
-    const bounds = findAlphaBounds(item.maskAlpha, width, height) || { x: 0, y: 0, width, height };
-    const longest = Math.max(bounds.width, bounds.height);
-    const padding = Math.round(longest * MARGIN_RATIO[s.margin]);
-    const contentWidth = bounds.width + padding * 2;
-    const contentHeight = bounds.height + padding * 2;
-    const outputWidth = s.center ? Math.max(contentWidth, contentHeight) : contentWidth;
-    const outputHeight = s.center ? Math.max(contentWidth, contentHeight) : contentHeight;
-    const drawX = Math.round((outputWidth - bounds.width) / 2);
-    const drawY = Math.round((outputHeight - bounds.height) / 2);
-
-    outputCanvas.width = Math.max(1, outputWidth);
-    outputCanvas.height = Math.max(1, outputHeight);
-    outputContext.clearRect(0, 0, outputCanvas.width, outputCanvas.height);
-
-    const bg = s.format === "jpeg" && s.background === "transparent" ? "white" : s.background;
-    if (bg !== "transparent") {
-      outputContext.fillStyle = bg === "black" ? "#111827" : "#ffffff";
-      outputContext.fillRect(0, 0, outputCanvas.width, outputCanvas.height);
-    }
-
-    outputContext.drawImage(workCanvas, bounds.x, bounds.y, bounds.width, bounds.height, drawX, drawY, bounds.width, bounds.height);
-
-    const type = s.format === "jpeg" ? "image/jpeg" : "image/png";
-    const blob = await canvasToBlob(outputCanvas, type, 0.92);
-    return {
-      blob,
-      format: s.format,
-      map: {
-        sourceX: bounds.x,
-        sourceY: bounds.y,
-        drawX,
-        drawY,
-        drawWidth: bounds.width,
-        drawHeight: bounds.height,
-        outputWidth,
-        outputHeight
-      }
-    };
-  }
-
-  function findAlphaBounds(alpha, width, height) {
-    let minX = width;
-    let minY = height;
-    let maxX = -1;
-    let maxY = -1;
-    for (let y = 0; y < height; y += 1) {
-      for (let x = 0; x < width; x += 1) {
-        if (alpha[y * width + x] > 8) {
-          minX = Math.min(minX, x);
-          minY = Math.min(minY, y);
-          maxX = Math.max(maxX, x);
-          maxY = Math.max(maxY, y);
-        }
-      }
-    }
-    if (maxX < minX || maxY < minY) return null;
-    return { x: minX, y: minY, width: maxX - minX + 1, height: maxY - minY + 1 };
-  }
-
-  function canvasToBlob(canvas, type, quality) {
-    return new Promise((resolve, reject) => {
-      canvas.toBlob((blob) => {
-        if (blob) resolve(blob);
-        else reject(new Error("画像の変換に失敗しました。"));
-      }, type, quality);
-    });
-  }
-
-  async function rerenderSuccessItems() {
-    const doneItems = successfulItems();
-    if (!doneItems.length) {
-      refreshOutputSummary();
-      return;
-    }
-
-    setBusy(true, "設定を反映中");
-    for (const item of doneItems) await renderFinalImage(item);
-    setBusy(false);
-    renderAll();
-  }
-
-  function canvasPointToSource(event, item) {
-    if (!item || !item.renderMap) return null;
-    const rect = resultCanvas.getBoundingClientRect();
-    const canvasX = (event.clientX - rect.left) * (resultCanvas.width / rect.width);
-    const canvasY = (event.clientY - rect.top) * (resultCanvas.height / rect.height);
-    const map = item.renderMap;
-    if (canvasX < map.drawX || canvasY < map.drawY || canvasX >= map.drawX + map.drawWidth || canvasY >= map.drawY + map.drawHeight) {
-      return null;
-    }
-    return {
-      x: Math.round(map.sourceX + canvasX - map.drawX),
-      y: Math.round(map.sourceY + canvasY - map.drawY)
-    };
-  }
-
-  function pushHistory(item) {
-    if (!item || !item.maskAlpha) return;
-    item.history.push(new Uint8ClampedArray(item.maskAlpha));
-    if (item.history.length > HISTORY_LIMIT) item.history.shift();
-    item.redo = [];
-    updateSaveState();
-  }
-
-  function restoreConnectedArea(point) {
-    const item = activeItem();
-    if (!item || !item.candidateAlpha || !point) return showEditNotice("復元候補がありません");
-    const seed = nearestCandidate(item, point.x, point.y, 50);
-    if (!seed) return showEditNotice("復元候補がありません");
-    const region = connectedCandidateRegion(item, seed.x, seed.y, 80);
-    if (!region.length) return showEditNotice("復元候補がありません");
-    pushHistory(item);
-    region.forEach((pixel) => {
-      item.maskAlpha[pixel] = 255;
-    });
-    renderEditedItem(item);
-  }
-
-  function nearestCandidate(item, x, y, radius) {
-    const { width, height } = item.originalImageData;
-    let best = null;
-    let bestDistance = Infinity;
-    for (let yy = Math.max(0, y - radius); yy <= Math.min(height - 1, y + radius); yy += 1) {
-      for (let xx = Math.max(0, x - radius); xx <= Math.min(width - 1, x + radius); xx += 1) {
-        const distance = Math.hypot(xx - x, yy - y);
-        if (distance > radius || distance >= bestDistance) continue;
-        if (item.candidateAlpha[yy * width + xx]) {
-          best = { x: xx, y: yy };
-          bestDistance = distance;
-        }
-      }
-    }
-    return best;
-  }
-
-  function connectedCandidateRegion(item, seedX, seedY, maxDistance) {
-    const { width, height } = item.originalImageData;
-    const seedPixel = seedY * width + seedX;
-    const visited = new Uint8Array(width * height);
-    const queue = [seedPixel];
-    const region = [];
-    visited[seedPixel] = 1;
-
-    while (queue.length && region.length < 60000) {
-      const pixel = queue.shift();
-      const x = pixel % width;
-      const y = Math.floor(pixel / width);
-      if (!item.candidateAlpha[pixel]) continue;
-      if (Math.hypot(x - seedX, y - seedY) > maxDistance) continue;
-      region.push(pixel);
-
-      const neighbors = [pixel - 1, pixel + 1, pixel - width, pixel + width];
-      neighbors.forEach((next) => {
-        if (next < 0 || next >= visited.length || visited[next]) return;
-        const nx = next % width;
-        const ny = Math.floor(next / width);
-        if (Math.abs(nx - x) + Math.abs(ny - y) !== 1) return;
-        visited[next] = 1;
+}
+
+function sizeCanvases(width, height) {
+  [outputCanvas, boundaryCanvas, interactionCanvas].forEach((canvas) => {
+    canvas.width = width;
+    canvas.height = height;
+    canvas.style.width = `${width}px`;
+    canvas.style.height = `${height}px`;
+  });
+  stack.style.width = `${width}px`;
+  stack.style.height = `${height}px`;
+  emptyState.hidden = true;
+}
+
+function relabel() {
+  if (!state) return;
+  const { width, height, alphaMask } = state;
+  const labelMap = new Int32Array(width * height);
+  const labels = [{ id: 0, kind: "none", count: 0 }];
+  let nextLabel = 1;
+  const queue = [];
+
+  for (let pixel = 0; pixel < alphaMask.length; pixel += 1) {
+    if (labelMap[pixel]) continue;
+    const kind = alphaMask[pixel] >= 128 ? "fg" : "bg";
+    let count = 0;
+    labelMap[pixel] = nextLabel;
+    queue.push(pixel);
+
+    while (queue.length) {
+      const current = queue.pop();
+      count += 1;
+      const x = current % width;
+      const y = Math.floor(current / width);
+      const neighbors = [];
+      if (x > 0) neighbors.push(current - 1);
+      if (x < width - 1) neighbors.push(current + 1);
+      if (y > 0) neighbors.push(current - width);
+      if (y < height - 1) neighbors.push(current + width);
+
+      for (const next of neighbors) {
+        if (labelMap[next]) continue;
+        const nextKind = alphaMask[next] >= 128 ? "fg" : "bg";
+        if (nextKind !== kind) continue;
+        labelMap[next] = nextLabel;
         queue.push(next);
-      });
-    }
-    return region;
-  }
-
-  function applyBrush(point, restore) {
-    const item = activeItem();
-    if (!item || !point || !item.maskAlpha) return;
-    const { size, feather } = brushSettings();
-    const radius = size / 2;
-    const { width, height } = item.originalImageData;
-    for (let y = Math.max(0, Math.floor(point.y - radius)); y <= Math.min(height - 1, Math.ceil(point.y + radius)); y += 1) {
-      for (let x = Math.max(0, Math.floor(point.x - radius)); x <= Math.min(width - 1, Math.ceil(point.x + radius)); x += 1) {
-        const distance = Math.hypot(x - point.x, y - point.y);
-        if (distance > radius) continue;
-        const pixel = y * width + x;
-        const soft = feather > 0 ? Math.max(0, Math.min(1, (radius - distance) / Math.max(1, feather))) : 1;
-        const target = restore ? 255 : 0;
-        item.maskAlpha[pixel] = Math.round(item.maskAlpha[pixel] + (target - item.maskAlpha[pixel]) * soft);
       }
     }
-    queueRenderEditedItem(item);
+
+    labels[nextLabel] = { id: nextLabel, kind, count };
+    nextLabel += 1;
   }
 
-  function queueRenderEditedItem(item) {
-    if (renderQueued) return;
-    renderQueued = true;
-    requestAnimationFrame(async () => {
-      renderQueued = false;
-      await renderEditedItem(item);
-    });
+  state.labelMap = labelMap;
+  state.labels = labels;
+  labelInfo.textContent = `島: ${labels.length - 1}`;
+}
+
+function renderAll() {
+  renderOutput();
+  renderBoundary();
+  renderInteraction();
+}
+
+function renderOutput() {
+  if (!state) return;
+  const source = state.originalImageData.data;
+  const output = outputCtx.createImageData(state.width, state.height);
+
+  if (previewMode === "original") {
+    output.data.set(source);
+    outputCtx.putImageData(output, 0, 0);
+    return;
   }
 
-  async function renderEditedItem(item) {
-    await renderFinalImage(item);
-    item.candidateAlpha = buildCandidateMap(item);
-    renderAll();
-  }
-
-  function showEditNotice(text) {
-    activeFileStatus.textContent = text;
-    setTimeout(() => {
-      const item = activeItem();
-      if (item) activeFileStatus.textContent = statusLabel(item);
-    }, 1800);
-  }
-
-  function updateCompareSlider() {
-    const value = Number(compareSlider.value);
-    afterClip.style.clipPath = `inset(0 ${100 - value}% 0 0)`;
-    compareHandle.style.left = `${value}%`;
-  }
-
-  function setGlobalError(text) {
-    progressText.textContent = text;
-    failureList.hidden = false;
-    failureList.innerHTML = `<strong>確認が必要です</strong><span>${escapeHtml(text)}</span>`;
-  }
-
-  async function saveOutput() {
-    const successes = successfulItems();
-    if (!successes.length) return;
-    if (successes.length === 1) return downloadBlob(successes[0].finalBlob, successes[0].outputName);
-    if (!window.JSZip) return setGlobalError("ZIP保存ライブラリを読み込めませんでした。ネットワークを確認してください。");
-    const zip = new window.JSZip();
-    successes.forEach((item) => zip.file(item.outputName, item.finalBlob));
-    const zipBlob = await zip.generateAsync({ type: "blob" });
-    downloadBlob(zipBlob, "cleaned_images.zip");
-  }
-
-  function downloadBlob(blob, fileName) {
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement("a");
-    link.href = url;
-    link.download = fileName;
-    link.click();
-    setTimeout(() => URL.revokeObjectURL(url), 1000);
-  }
-
-  function handleFiles(files) {
-    if (!files.length) return;
-    createItems(files);
-    processItems();
-  }
-
-  selectButton.addEventListener("click", () => fileInput.click());
-  dropZone.addEventListener("click", (event) => {
-    if (event.target !== selectButton) fileInput.click();
-  });
-  dropZone.addEventListener("keydown", (event) => {
-    if (event.key === "Enter" || event.key === " ") {
-      event.preventDefault();
-      fileInput.click();
+  for (let i = 0, p = 0; i < source.length; i += 4, p += 1) {
+    if (previewMode === "compare") {
+      const kept = state.alphaMask[p] >= 128;
+      output.data[i] = kept ? source[i] : Math.round(source[i] * 0.34 + 255 * 0.66);
+      output.data[i + 1] = kept ? source[i + 1] : Math.round(source[i + 1] * 0.34 + 255 * 0.66);
+      output.data[i + 2] = kept ? source[i + 2] : Math.round(source[i + 2] * 0.34 + 255 * 0.66);
+      output.data[i + 3] = 255;
+    } else {
+      output.data[i] = source[i];
+      output.data[i + 1] = source[i + 1];
+      output.data[i + 2] = source[i + 2];
+      output.data[i + 3] = state.alphaMask[p];
     }
-  });
-  dropZone.addEventListener("dragover", (event) => {
-    event.preventDefault();
-    dropZone.classList.add("dragging");
-  });
-  dropZone.addEventListener("dragleave", () => dropZone.classList.remove("dragging"));
-  dropZone.addEventListener("drop", (event) => {
-    event.preventDefault();
-    dropZone.classList.remove("dragging");
-    handleFiles(event.dataTransfer.files);
-  });
-  fileInput.addEventListener("change", () => {
-    handleFiles(fileInput.files);
-    fileInput.value = "";
-  });
+  }
+  outputCtx.putImageData(output, 0, 0);
+}
 
-  presetButtons.forEach((button) => {
-    button.addEventListener("click", async () => {
-      setPreset(button.dataset.preset);
-      await rerenderSuccessItems();
-    });
-  });
+function renderBoundary() {
+  boundaryCtx.clearRect(0, 0, boundaryCanvas.width, boundaryCanvas.height);
+  if (!state || !showBoundary.checked || previewMode === "original") return;
+  const image = boundaryCtx.createImageData(state.width, state.height);
+  for (let y = 1; y < state.height - 1; y += 1) {
+    for (let x = 1; x < state.width - 1; x += 1) {
+      const p = y * state.width + x;
+      const v = state.alphaMask[p] >= 128;
+      const edge = (state.alphaMask[p - 1] >= 128) !== v
+        || (state.alphaMask[p + 1] >= 128) !== v
+        || (state.alphaMask[p - state.width] >= 128) !== v
+        || (state.alphaMask[p + state.width] >= 128) !== v;
+      if (!edge) continue;
+      const i = p * 4;
+      image.data[i] = 37;
+      image.data[i + 1] = 99;
+      image.data[i + 2] = 235;
+      image.data[i + 3] = 190;
+    }
+  }
+  boundaryCtx.putImageData(image, 0, 0);
+}
 
-  [outputBackground, marginSize, outputFormat].forEach((control) => {
-    control.addEventListener("input", async () => {
-      markCustom();
-      refreshOutputSummary();
-      await rerenderSuccessItems();
-    });
-  });
+function renderInteraction() {
+  interactionCtx.clearRect(0, 0, interactionCanvas.width, interactionCanvas.height);
+  drawPolygonGuide();
+}
 
-  [alphaCutoff, edgeContrast].forEach((control) => {
-    control.addEventListener("input", () => {
-      markCustom();
-      updateLabels();
-      showEditNotice("フチ除去と輪郭補正は次回処理またはマスクリセット時に反映します");
-    });
-  });
+function highlightLabel(label) {
+  interactionCtx.clearRect(0, 0, interactionCanvas.width, interactionCanvas.height);
+  if (!state || !label) return;
+  const image = interactionCtx.createImageData(state.width, state.height);
+  for (let p = 0; p < state.labelMap.length; p += 1) {
+    if (state.labelMap[p] !== label) continue;
+    const i = p * 4;
+    image.data[i] = 0;
+    image.data[i + 1] = 132;
+    image.data[i + 2] = 255;
+    image.data[i + 3] = 88;
+  }
+  interactionCtx.putImageData(image, 0, 0);
+}
 
-  [brushSize, featherSize].forEach((control) => {
-    control.addEventListener("input", updateLabels);
+function drawPolygonGuide() {
+  updatePolygonButtons();
+  if (!polygonPoints.length) return;
+  interactionCtx.save();
+  const pointRadius = 6 / zoom;
+  interactionCtx.lineWidth = 2 / zoom;
+  interactionCtx.strokeStyle = "rgba(37, 99, 235, 0.95)";
+  interactionCtx.fillStyle = "rgba(37, 99, 235, 0.14)";
+  interactionCtx.beginPath();
+  interactionCtx.moveTo(polygonPoints[0].x, polygonPoints[0].y);
+  for (let i = 1; i < polygonPoints.length; i += 1) {
+    interactionCtx.lineTo(polygonPoints[i].x, polygonPoints[i].y);
+  }
+  if (polygonPoints.length >= 3) {
+    interactionCtx.closePath();
+    interactionCtx.fill();
+  }
+  interactionCtx.stroke();
+  polygonPoints.forEach((point, index) => {
+    interactionCtx.beginPath();
+    interactionCtx.fillStyle = index === 0 ? "#16a34a" : "#2563eb";
+    interactionCtx.arc(point.x, point.y, pointRadius, 0, Math.PI * 2);
+    interactionCtx.fill();
   });
+  interactionCtx.restore();
+}
 
-  centerObject.addEventListener("change", async () => {
-    markCustom();
-    refreshOutputSummary();
-    await rerenderSuccessItems();
+function updateCanvasActions() {
+  const polygonMode = currentTool === "polyFg" || currentTool === "polyBg";
+  canvasActions.hidden = !polygonMode;
+  updatePolygonButtons();
+}
+
+function updatePolygonButtons() {
+  const active = currentTool === "polyFg" || currentTool === "polyBg";
+  applyPolygonButton.disabled = !state || !active || polygonPoints.length < 3;
+  undoPointButton.disabled = !state || !active || polygonPoints.length === 0;
+  clearPolygonButton.disabled = !state || !active || polygonPoints.length === 0;
+}
+
+function toggleLabel(label) {
+  if (!state || !label) return;
+  const info = state.labels[label];
+  if (!info) return;
+  const total = state.width * state.height;
+  if (info.kind === "bg" && info.count > total * 0.35) {
+    showToast("大きな背景領域です。必要な部分だけ点で囲んで戻してください。");
+    return;
+  }
+  pushHistory();
+  const target = info.kind === "fg" ? 0 : 255;
+  for (let p = 0; p < state.labelMap.length; p += 1) {
+    if (state.labelMap[p] === label) state.alphaMask[p] = target;
+  }
+  relabel();
+  renderAll();
+  showToast(info.kind === "fg" ? "選択した島を消しました。" : "選択した島を戻しました。");
+}
+
+function applyPolygon(mode) {
+  if (!state || polygonPoints.length < 3) return;
+  const bounds = polygonBounds(polygonPoints);
+  const targetAlpha = mode === "bg" ? 0 : 255;
+  pushHistory();
+  for (let y = bounds.y1; y <= bounds.y2; y += 1) {
+    const intersections = polygonIntersections(y + 0.5, polygonPoints);
+    for (let i = 0; i + 1 < intersections.length; i += 2) {
+      const xStart = clamp(Math.floor(intersections[i]), 0, state.width - 1);
+      const xEnd = clamp(Math.ceil(intersections[i + 1]), 0, state.width - 1);
+      for (let x = xStart; x <= xEnd; x += 1) {
+        state.alphaMask[y * state.width + x] = targetAlpha;
+      }
+    }
+  }
+  relabel();
+  renderAll();
+  clearPolygon();
+  showToast(mode === "fg" ? "囲んだ内側をすべて戻しました。" : "囲んだ内側をすべて消しました。");
+}
+
+function polygonBounds(points) {
+  const xs = points.map((point) => point.x);
+  const ys = points.map((point) => point.y);
+  return {
+    x1: clamp(Math.floor(Math.min(...xs)), 0, state.width - 1),
+    x2: clamp(Math.ceil(Math.max(...xs)), 0, state.width - 1),
+    y1: clamp(Math.floor(Math.min(...ys)), 0, state.height - 1),
+    y2: clamp(Math.ceil(Math.max(...ys)), 0, state.height - 1)
+  };
+}
+
+function polygonIntersections(y, points) {
+  const xs = [];
+  for (let i = 0; i < points.length; i += 1) {
+    const a = points[i];
+    const b = points[(i + 1) % points.length];
+    if ((a.y <= y && b.y > y) || (b.y <= y && a.y > y)) {
+      xs.push(a.x + ((y - a.y) * (b.x - a.x)) / (b.y - a.y));
+    }
+  }
+  return xs.sort((a, b) => a - b);
+}
+
+function addPolygonPoint(point) {
+  polygonPoints.push(point);
+  renderInteraction();
+}
+
+function clearPolygon() {
+  polygonPoints = [];
+  renderInteraction();
+}
+
+function canvasPoint(event) {
+  const rect = interactionCanvas.getBoundingClientRect();
+  const rawX = (event.clientX - rect.left) * (interactionCanvas.width / rect.width);
+  const rawY = (event.clientY - rect.top) * (interactionCanvas.height / rect.height);
+  return {
+    x: clamp(Math.floor(rawX), 0, state.width - 1),
+    y: clamp(Math.floor(rawY), 0, state.height - 1),
+    inside: rawX >= 0 && rawX < state.width && rawY >= 0 && rawY < state.height
+  };
+}
+
+function clamp(value, min, max) {
+  return Math.max(min, Math.min(max, value));
+}
+
+function pushHistory() {
+  if (!state) return;
+  state.history.push(new Uint8ClampedArray(state.alphaMask));
+  if (state.history.length > HISTORY_LIMIT) state.history.shift();
+  state.redo = [];
+  updateHistoryButtons();
+}
+
+function updateHistoryButtons() {
+  undoButton.disabled = !state || state.history.length === 0;
+  redoButton.disabled = !state || state.redo.length === 0;
+}
+
+function undoMaskEdit() {
+  if (!state || !state.history.length) return;
+  state.redo.push(new Uint8ClampedArray(state.alphaMask));
+  state.alphaMask = state.history.pop();
+  relabel();
+  renderAll();
+  updateHistoryButtons();
+}
+
+function redoMaskEdit() {
+  if (!state || !state.redo.length) return;
+  state.history.push(new Uint8ClampedArray(state.alphaMask));
+  state.alphaMask = state.redo.pop();
+  relabel();
+  renderAll();
+  updateHistoryButtons();
+}
+
+function resetView() {
+  if (!state) return;
+  const bounds = viewportBounds();
+  const fit = Math.min(bounds.width / state.width, bounds.height / state.height);
+  zoom = Math.min(1, Math.max(MIN_ZOOM, fit));
+  panX = bounds.left + (bounds.width - state.width * zoom) / 2;
+  panY = bounds.top + (bounds.height - state.height * zoom) / 2;
+  applyTransform();
+}
+
+function viewportBounds() {
+  const rect = viewport.getBoundingClientRect();
+  const side = 24;
+  const top = 76;
+  const bottom = 64;
+  return {
+    left: side,
+    top,
+    width: Math.max(1, rect.width - side * 2),
+    height: Math.max(1, rect.height - top - bottom)
+  };
+}
+
+function applyTransform() {
+  stack.style.transform = `translate(${panX}px, ${panY}px) scale(${zoom})`;
+  zoomResetButton.textContent = `${Math.round(zoom * 100)}%`;
+}
+
+function zoomAtCenter(nextZoom) {
+  if (!state) return;
+  const bounds = viewportBounds();
+  zoomAtViewportPoint(bounds.left + bounds.width / 2, bounds.top + bounds.height / 2, nextZoom);
+}
+
+function zoomAtViewportPoint(viewportX, viewportY, nextZoom) {
+  const imageX = (viewportX - panX) / zoom;
+  const imageY = (viewportY - panY) / zoom;
+  zoom = clamp(nextZoom, MIN_ZOOM, MAX_ZOOM);
+  panX = viewportX - imageX * zoom;
+  panY = viewportY - imageY * zoom;
+  applyTransform();
+}
+
+function rotateCurrentImage(degrees) {
+  if (!state) return;
+  clearPolygon();
+  const smooth = Math.abs(degrees) % 90 !== 0;
+  const rotatedOriginal = rotateImageData(state.originalImageData, degrees, smooth);
+  const rotatedConfidence = rotateAlphaArray(state.confidenceMap, state.width, state.height, degrees, smooth);
+  const rotatedMask = rotateAlphaArray(state.alphaMask, state.width, state.height, degrees, smooth);
+  state.originalImageData = rotatedOriginal.imageData;
+  state.confidenceMap = rotatedConfidence.alpha;
+  state.alphaMask = rotatedMask.alpha.map((alpha) => (alpha >= 128 ? 255 : 0));
+  state.width = rotatedOriginal.width;
+  state.height = rotatedOriginal.height;
+  state.history = [];
+  state.redo = [];
+  rotationAngle = normalizeAngle(rotationAngle + degrees);
+  rotateAngleLabel.textContent = `${rotationAngle}°`;
+  sizeCanvases(state.width, state.height);
+  relabel();
+  resetView();
+  renderAll();
+  updateHistoryButtons();
+}
+
+function rotateImageData(imageData, degrees, smooth) {
+  const sourceCanvas = document.createElement("canvas");
+  sourceCanvas.width = imageData.width;
+  sourceCanvas.height = imageData.height;
+  sourceCanvas.getContext("2d").putImageData(imageData, 0, 0);
+  const rotated = rotateCanvas(sourceCanvas, degrees, smooth);
+  const rotatedData = rotated.ctx.getImageData(0, 0, rotated.width, rotated.height);
+  return { imageData: rotatedData, width: rotated.width, height: rotated.height };
+}
+
+function rotateAlphaArray(alphaArray, width, height, degrees, smooth) {
+  const image = new ImageData(width, height);
+  for (let p = 0, i = 0; p < alphaArray.length; p += 1, i += 4) {
+    image.data[i] = 255;
+    image.data[i + 1] = 255;
+    image.data[i + 2] = 255;
+    image.data[i + 3] = alphaArray[p];
+  }
+  const sourceCanvas = document.createElement("canvas");
+  sourceCanvas.width = width;
+  sourceCanvas.height = height;
+  sourceCanvas.getContext("2d").putImageData(image, 0, 0);
+  const rotated = rotateCanvas(sourceCanvas, degrees, smooth);
+  const data = rotated.ctx.getImageData(0, 0, rotated.width, rotated.height).data;
+  const alpha = new Uint8ClampedArray(rotated.width * rotated.height);
+  for (let p = 0, i = 3; p < alpha.length; p += 1, i += 4) alpha[p] = data[i];
+  return { alpha, width: rotated.width, height: rotated.height };
+}
+
+function rotateCanvas(sourceCanvas, degrees, smooth) {
+  const radians = (degrees * Math.PI) / 180;
+  const sin = Math.abs(Math.sin(radians));
+  const cos = Math.abs(Math.cos(radians));
+  const width = Math.ceil(sourceCanvas.width * cos + sourceCanvas.height * sin);
+  const height = Math.ceil(sourceCanvas.width * sin + sourceCanvas.height * cos);
+  const canvas = document.createElement("canvas");
+  canvas.width = Math.max(1, width);
+  canvas.height = Math.max(1, height);
+  const ctx = canvas.getContext("2d");
+  ctx.imageSmoothingEnabled = smooth;
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  ctx.translate(canvas.width / 2, canvas.height / 2);
+  ctx.rotate(radians);
+  ctx.drawImage(sourceCanvas, -sourceCanvas.width / 2, -sourceCanvas.height / 2);
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  return { canvas, ctx, width: canvas.width, height: canvas.height };
+}
+
+function normalizeAngle(angle) {
+  let normalized = Math.round(angle) % 360;
+  if (normalized > 180) normalized -= 360;
+  if (normalized <= -180) normalized += 360;
+  return normalized;
+}
+
+function applyCurrentPolygon() {
+  if (currentTool === "polyFg") applyPolygon("fg");
+  if (currentTool === "polyBg") applyPolygon("bg");
+}
+
+function undoPolygonPoint() {
+  if (!polygonPoints.length) return false;
+  polygonPoints.pop();
+  renderInteraction();
+  return true;
+}
+
+function isTypingTarget(target) {
+  if (!target) return false;
+  const tag = target.tagName;
+  return target.isContentEditable || tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT";
+}
+
+function isCanvasControlTarget(target) {
+  return Boolean(target.closest?.("button, select, input, .view-switch, .canvas-actions, .canvas-zoom, .canvas-rotate"));
+}
+
+async function exportPng() {
+  if (!state) return;
+  const blob = await createOutputBlob(exportBackground.value);
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = state.fileName.replace(/\.[^.]+$/, "_client_clean.png");
+  link.click();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+  showToast("PNGを保存しました。");
+}
+
+async function copyTransparentPng() {
+  if (!state) return;
+  if (!navigator.clipboard || !window.ClipboardItem) {
+    showToast("このブラウザは画像コピーに対応していません。");
+    return;
+  }
+  try {
+    const blob = await createOutputBlob("transparent");
+    await navigator.clipboard.write([
+      new ClipboardItem({ "image/png": blob })
+    ]);
+    showToast("クリップボードへコピーしました。");
+  } catch (error) {
+    console.error(error);
+    showToast("コピーに失敗しました。");
+  }
+}
+
+async function createOutputBlob(bg) {
+  const bounds = alphaBounds(OUTPUT_PADDING);
+  const sourceWidth = bounds.x2 - bounds.x1 + 1;
+  const sourceHeight = bounds.y2 - bounds.y1 + 1;
+  const scale = outputScale(sourceWidth, sourceHeight);
+  const outputWidth = Math.max(1, Math.round(sourceWidth * scale));
+  const outputHeight = Math.max(1, Math.round(sourceHeight * scale));
+  tempCanvas.width = outputWidth;
+  tempCanvas.height = outputHeight;
+  tempCtx.clearRect(0, 0, outputWidth, outputHeight);
+  tempCtx.imageSmoothingEnabled = true;
+  tempCtx.imageSmoothingQuality = "high";
+  if (bg !== "transparent") {
+    tempCtx.fillStyle = bg === "black" ? "#111827" : bg === "gray" ? "#8f99a8" : "#ffffff";
+    tempCtx.fillRect(0, 0, outputWidth, outputHeight);
+  }
+  const previousMode = previewMode;
+  previewMode = "checker";
+  renderOutput();
+  tempCtx.drawImage(
+    outputCanvas,
+    bounds.x1,
+    bounds.y1,
+    sourceWidth,
+    sourceHeight,
+    0,
+    0,
+    outputWidth,
+    outputHeight
+  );
+  previewMode = previousMode;
+  renderOutput();
+  return canvasToBlob(tempCanvas, "image/png");
+}
+
+function outputScale(width, height) {
+  const preset = outputSize.value;
+  const maxLongSide = preset === "light" ? 600 : preset === "standard" ? 900 : Infinity;
+  if (!Number.isFinite(maxLongSide)) return 1;
+  return Math.min(1, maxLongSide / Math.max(width, height));
+}
+
+function alphaBounds(padding = 0) {
+  let x1 = state.width;
+  let y1 = state.height;
+  let x2 = -1;
+  let y2 = -1;
+  for (let y = 0; y < state.height; y += 1) {
+    for (let x = 0; x < state.width; x += 1) {
+      const alpha = state.alphaMask[y * state.width + x];
+      if (alpha < 8) continue;
+      if (x < x1) x1 = x;
+      if (x > x2) x2 = x;
+      if (y < y1) y1 = y;
+      if (y > y2) y2 = y;
+    }
+  }
+  if (x2 < x1 || y2 < y1) {
+    return { x1: 0, y1: 0, x2: state.width - 1, y2: state.height - 1 };
+  }
+  return {
+    x1: clamp(x1 - padding, 0, state.width - 1),
+    y1: clamp(y1 - padding, 0, state.height - 1),
+    x2: clamp(x2 + padding, 0, state.width - 1),
+    y2: clamp(y2 + padding, 0, state.height - 1)
+  };
+}
+
+function canvasToBlob(canvas, type) {
+  return new Promise((resolve, reject) => {
+    canvas.toBlob((blob) => {
+      if (blob) resolve(blob);
+      else reject(new Error("画像の変換に失敗しました。"));
+    }, type);
   });
+}
 
-  editMode.addEventListener("change", () => {
-    if (editMode.value === "candidate") showCandidates.checked = true;
+function nextFrame() {
+  return new Promise((resolve) => requestAnimationFrame(resolve));
+}
+
+selectButton.addEventListener("click", () => fileInput.click());
+dropZone.addEventListener("click", (event) => {
+  if (event.target !== selectButton) fileInput.click();
+});
+dropZone.addEventListener("dragover", (event) => {
+  event.preventDefault();
+  dropZone.classList.add("dragging");
+});
+dropZone.addEventListener("dragleave", () => dropZone.classList.remove("dragging"));
+dropZone.addEventListener("drop", (event) => {
+  event.preventDefault();
+  dropZone.classList.remove("dragging");
+  loadFile(event.dataTransfer.files[0]);
+});
+fileInput.addEventListener("change", () => {
+  loadFile(fileInput.files[0]);
+  fileInput.value = "";
+});
+
+toolButtons.forEach((button) => {
+  button.addEventListener("click", () => setTool(button.dataset.tool));
+});
+
+previewButtons.forEach((button) => {
+  button.addEventListener("click", () => {
+    previewMode = button.dataset.preview;
+    previewButtons.forEach((item) => item.classList.toggle("active", item === button));
+    viewport.className = `canvas-viewport ${["original", "compare"].includes(previewMode) ? "checker" : previewMode}`;
     renderAll();
   });
-  showCandidates.addEventListener("change", renderAll);
+});
 
-  undoButton.addEventListener("click", async () => {
-    const item = activeItem();
-    if (!item || !item.history.length) return;
-    item.redo.push(new Uint8ClampedArray(item.maskAlpha));
-    item.maskAlpha = item.history.pop();
-    await renderEditedItem(item);
-  });
+viewport.addEventListener("wheel", (event) => {
+  if (!state) return;
+  event.preventDefault();
+  const rect = viewport.getBoundingClientRect();
+  const factor = event.deltaY < 0 ? 1.14 : 1 / 1.14;
+  zoomAtViewportPoint(event.clientX - rect.left, event.clientY - rect.top, zoom * factor);
+}, { passive: false });
 
-  redoButton.addEventListener("click", async () => {
-    const item = activeItem();
-    if (!item || !item.redo.length) return;
-    item.history.push(new Uint8ClampedArray(item.maskAlpha));
-    item.maskAlpha = item.redo.pop();
-    await renderEditedItem(item);
-  });
+viewport.addEventListener("pointermove", (event) => {
+  if (!state) return;
+  if (isCanvasControlTarget(event.target) && !dragging) return;
+  const point = canvasPoint(event);
+  if (dragging && (currentTool === "pan" || rightButtonPanning)) {
+    panX += event.clientX - lastPointer.x;
+    panY += event.clientY - lastPointer.y;
+    lastPointer = { x: event.clientX, y: event.clientY };
+    applyTransform();
+    return;
+  }
+  if (currentTool === "polyFg" || currentTool === "polyBg") {
+    renderInteraction();
+    if (polygonPoints.length) {
+      interactionCtx.save();
+      interactionCtx.strokeStyle = "rgba(37, 99, 235, 0.55)";
+      interactionCtx.lineWidth = 1 / zoom;
+      const last = polygonPoints[polygonPoints.length - 1];
+      interactionCtx.beginPath();
+      interactionCtx.moveTo(last.x, last.y);
+      interactionCtx.lineTo(point.x, point.y);
+      interactionCtx.stroke();
+      interactionCtx.restore();
+    }
+    return;
+  }
+  if (currentTool === "toggle" && point.inside) {
+    const label = state.labelMap[point.y * state.width + point.x];
+    highlightLabel(label);
+    const info = state.labels[label];
+    labelInfo.textContent = info ? `島: ${label} / ${info.kind === "fg" ? "前景" : "背景"} / ${info.count}px` : "島: -";
+  }
+});
 
-  resetMaskButton.addEventListener("click", async () => {
-    const item = activeItem();
-    if (!item || !item.baseMaskAlpha) return;
-    pushHistory(item);
-    item.maskAlpha = new Uint8ClampedArray(item.baseMaskAlpha);
-    await renderEditedItem(item);
-  });
+viewport.addEventListener("pointerdown", (event) => {
+  if (!state) return;
+  if (isCanvasControlTarget(event.target)) return;
+  viewport.setPointerCapture(event.pointerId);
+  dragging = true;
+  lastPointer = { x: event.clientX, y: event.clientY };
+  if (event.button === 2) {
+    rightButtonPanning = true;
+    updateCanvasCursor();
+    return;
+  }
+  if (event.button !== 0) {
+    dragging = false;
+    return;
+  }
+  if (currentTool === "pan") return;
+  const point = canvasPoint(event);
+  if (currentTool === "polyFg" || currentTool === "polyBg") {
+    addPolygonPoint(point);
+    dragging = false;
+    return;
+  }
+  if (currentTool === "toggle" && point.inside) {
+    toggleLabel(state.labelMap[point.y * state.width + point.x]);
+    dragging = false;
+    return;
+  }
+});
 
-  resultCanvas.addEventListener("pointerdown", (event) => {
-    const item = activeItem();
-    if (!item || compareMode) return;
-    const point = canvasPointToSource(event, item);
-    if (canClickRestore()) return restoreConnectedArea(point);
-    if (editMode.value !== "restoreBrush" && editMode.value !== "eraseBrush") return;
-    drawing = true;
-    resultCanvas.setPointerCapture(event.pointerId);
-    pushHistory(item);
-    applyBrush(point, editMode.value === "restoreBrush");
-  });
+viewport.addEventListener("pointerup", () => {
+  if (!state) return;
+  dragging = false;
+  rightButtonPanning = false;
+  updateCanvasCursor();
+});
 
-  resultCanvas.addEventListener("pointermove", (event) => {
-    if (!drawing) return;
-    const item = activeItem();
-    applyBrush(canvasPointToSource(event, item), editMode.value === "restoreBrush");
-  });
+viewport.addEventListener("dblclick", (event) => {
+  if (isCanvasControlTarget(event.target)) return;
+  if (currentTool === "polyFg") applyPolygon("fg");
+  if (currentTool === "polyBg") applyPolygon("bg");
+});
 
-  resultCanvas.addEventListener("pointerup", () => {
-    drawing = false;
-  });
+viewport.addEventListener("pointercancel", () => {
+  dragging = false;
+  rightButtonPanning = false;
+  updateCanvasCursor();
+});
 
-  resultCanvas.addEventListener("pointercancel", () => {
-    drawing = false;
-  });
+viewport.addEventListener("contextmenu", (event) => {
+  event.preventDefault();
+});
 
-  saveButton.addEventListener("click", saveOutput);
-  compareButton.addEventListener("click", () => {
-    compareMode = !compareMode;
-    compareSlider.value = compareMode ? "50" : "100";
-    renderActive();
-  });
-  compareSlider.addEventListener("input", updateCompareSlider);
-
-  viewBgButtons.forEach((button) => {
-    button.addEventListener("click", () => {
-      viewBgButtons.forEach((item) => item.classList.remove("active"));
-      button.classList.add("active");
-      resultStage.className = `result-stage ${button.dataset.viewBg}`;
-    });
-  });
-
-  setPreset("ppt");
+showBoundary.addEventListener("change", renderBoundary);
+undoButton.addEventListener("click", undoMaskEdit);
+redoButton.addEventListener("click", redoMaskEdit);
+relabelButton.addEventListener("click", () => {
+  relabel();
   renderAll();
-})();
+  showToast("島を再計算しました。");
+});
+applyPolygonButton.addEventListener("click", applyCurrentPolygon);
+undoPointButton.addEventListener("click", undoPolygonPoint);
+clearPolygonButton.addEventListener("click", clearPolygon);
+zoomOutButton.addEventListener("click", () => zoomAtCenter(zoom / 1.25));
+zoomInButton.addEventListener("click", () => zoomAtCenter(zoom * 1.25));
+zoomResetButton.addEventListener("click", resetView);
+rotateButtons.forEach((button) => {
+  button.addEventListener("click", () => rotateCurrentImage(Number(button.dataset.rotate)));
+});
+copyButton.addEventListener("click", copyTransparentPng);
+saveButton.addEventListener("click", exportPng);
+window.addEventListener("resize", () => {
+  if (!state) return;
+  resetView();
+});
+
+document.addEventListener("keydown", (event) => {
+  if (isTypingTarget(event.target)) return;
+
+  if (event.key === "Escape") {
+    event.preventDefault();
+    setTool("pan");
+    return;
+  }
+
+  if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "z") {
+    event.preventDefault();
+    if ((currentTool === "polyFg" || currentTool === "polyBg") && undoPolygonPoint()) return;
+    undoMaskEdit();
+    return;
+  }
+
+  if (event.key === "Enter" && (currentTool === "polyFg" || currentTool === "polyBg")) {
+    event.preventDefault();
+    applyCurrentPolygon();
+    return;
+  }
+
+  if (event.key === "Delete" && (currentTool === "polyFg" || currentTool === "polyBg")) {
+    event.preventDefault();
+    clearPolygon();
+  }
+});
