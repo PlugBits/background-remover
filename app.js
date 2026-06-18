@@ -68,6 +68,7 @@ let lastPointer = null;
 let polygonPoints = [];
 let toastTimer = null;
 let historyDbPromise = null;
+let historyPreviewUrls = [];
 
 function setStatus(text, progress = null) {
   statusText.textContent = text;
@@ -790,6 +791,7 @@ async function saveHistoryItem(id) {
 
 async function renderHistory() {
   const items = await getHistoryItems();
+  revokeHistoryPreviewUrls();
   historyList.replaceChildren();
   historyEmpty.hidden = items.length > 0;
   clearHistoryButton.disabled = items.length === 0;
@@ -797,6 +799,15 @@ async function renderHistory() {
     const row = document.createElement("div");
     row.className = "history-item";
     row.dataset.id = item.id;
+
+    const preview = document.createElement("div");
+    preview.className = "history-thumb checker";
+    const image = document.createElement("img");
+    const url = URL.createObjectURL(item.blob);
+    historyPreviewUrls.push(url);
+    image.src = url;
+    image.alt = item.sourceName || item.fileName;
+    preview.append(image);
 
     const title = document.createElement("strong");
     title.textContent = item.sourceName || item.fileName;
@@ -813,9 +824,14 @@ async function renderHistory() {
       <button type="button" data-history-action="delete">削除</button>
     `;
 
-    row.append(title, meta, actions);
+    row.append(preview, title, meta, actions);
     historyList.append(row);
   }
+}
+
+function revokeHistoryPreviewUrls() {
+  historyPreviewUrls.forEach((url) => URL.revokeObjectURL(url));
+  historyPreviewUrls = [];
 }
 
 function formatDate(value) {
@@ -1088,6 +1104,7 @@ window.addEventListener("resize", () => {
   if (!state) return;
   resetView();
 });
+window.addEventListener("pagehide", revokeHistoryPreviewUrls);
 
 document.addEventListener("keydown", (event) => {
   if (isTypingTarget(event.target)) return;
