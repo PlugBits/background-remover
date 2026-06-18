@@ -329,15 +329,39 @@ function updateHistoryButtons() {
 }
 
 function resetView() {
-  zoom = Math.min(1, Math.min((viewport.clientWidth - 48) / state.width, (viewport.clientHeight - 48) / state.height));
-  panX = (viewport.clientWidth - state.width * zoom) / 2;
-  panY = (viewport.clientHeight - state.height * zoom) / 2;
+  const bounds = viewportBounds();
+  zoom = Math.min(1, Math.min(bounds.width / state.width, bounds.height / state.height));
+  panX = bounds.left + (bounds.width - state.width * zoom) / 2;
+  panY = bounds.top + (bounds.height - state.height * zoom) / 2;
   applyTransform();
+}
+
+function viewportBounds() {
+  const padding = 24;
+  return {
+    left: padding,
+    top: padding,
+    width: Math.max(1, viewport.clientWidth - padding * 2),
+    height: Math.max(1, viewport.clientHeight - padding * 2)
+  };
 }
 
 function applyTransform() {
   stack.style.transform = `translate(${panX}px, ${panY}px) scale(${zoom})`;
   zoomResetButton.textContent = `${Math.round(zoom * 100)}%`;
+}
+
+function zoomAtCenter(nextZoom) {
+  if (!state) return;
+  const bounds = viewportBounds();
+  const centerX = bounds.left + bounds.width / 2;
+  const centerY = bounds.top + bounds.height / 2;
+  const imageX = (centerX - panX) / zoom;
+  const imageY = (centerY - panY) / zoom;
+  zoom = Math.max(0.1, Math.min(8, nextZoom));
+  panX = centerX - imageX * zoom;
+  panY = centerY - imageY * zoom;
+  applyTransform();
 }
 
 async function exportPng() {
@@ -479,12 +503,10 @@ relabelButton.addEventListener("click", () => {
   setStatus("島を再計算しました。");
 });
 zoomOutButton.addEventListener("click", () => {
-  zoom = Math.max(0.1, zoom / 1.25);
-  applyTransform();
+  zoomAtCenter(zoom / 1.25);
 });
 zoomInButton.addEventListener("click", () => {
-  zoom = Math.min(8, zoom * 1.25);
-  applyTransform();
+  zoomAtCenter(zoom * 1.25);
 });
 zoomResetButton.addEventListener("click", resetView);
 saveButton.addEventListener("click", exportPng);

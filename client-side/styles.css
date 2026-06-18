@@ -118,6 +118,7 @@ h1 {
 .workspace {
   display: grid;
   gap: 14px;
+  min-width: 0;
 }
 
 .panel,
@@ -275,7 +276,9 @@ h1 {
   position: relative;
   display: grid;
   place-items: center;
-  min-height: 760px;
+  width: 100%;
+  height: min(760px, calc(100vh - 190px));
+  min-height: 560px;
   overflow: hidden;
 }
 
