@@ -26,6 +26,25 @@
           <button id="selectButton" type="button">ファイルを選択</button>
         </div>
 
+        <div id="adjustPanel" class="adjust-panel" hidden>
+          <div class="adjust-title">
+            <strong>仕上げ調整</strong>
+            <button id="resetAdjustButton" type="button">リセット</button>
+          </div>
+
+          <label class="slider-row" for="alphaCutoff">
+            <span>薄いフチを消す</span>
+            <output id="alphaCutoffValue">0</output>
+            <input id="alphaCutoff" type="range" min="0" max="160" value="0">
+          </label>
+
+          <label class="slider-row" for="edgeContrast">
+            <span>境界をくっきり</span>
+            <output id="edgeContrastValue">0</output>
+            <input id="edgeContrast" type="range" min="0" max="100" value="0">
+          </label>
+        </div>
+
         <div id="message" class="message" role="status" aria-live="polite"></div>
       </div>
 
@@ -41,10 +60,32 @@
 
         <div id="previewStage" class="preview-stage checker">
           <div id="emptyState" class="empty-state">
-            <strong>透過PNGのプレビュー</strong>
-            <span>処理後の画像がここに表示されます。</span>
+            <strong>元画像と透過PNGをここで確認</strong>
+            <span>画像を選ぶと、処理前の状態をすぐに表示します。</span>
           </div>
-          <img id="resultImage" alt="背景削除結果" hidden>
+
+          <div id="previewGrid" class="preview-grid" hidden>
+            <figure class="preview-card original-card">
+              <figcaption>元画像</figcaption>
+              <div class="image-box">
+                <img id="originalImage" alt="元画像">
+              </div>
+            </figure>
+
+            <figure class="preview-card result-card">
+              <figcaption>
+                <span>背景削除後</span>
+                <small id="resultBadge">処理待ち</small>
+              </figcaption>
+              <div class="image-box result-box">
+                <div id="processingOverlay" class="processing-overlay" hidden>
+                  <span></span>
+                  <strong>処理中</strong>
+                </div>
+                <img id="resultImage" alt="背景削除結果" hidden>
+              </div>
+            </figure>
+          </div>
         </div>
       </div>
     </section>
