@@ -162,6 +162,12 @@ h1 {
   color: var(--muted);
 }
 
+.panel-title button {
+  min-height: 30px;
+  padding: 0 10px;
+  font-weight: 800;
+}
+
 .drop-zone {
   display: grid;
   place-items: center;
@@ -291,6 +297,51 @@ h1 {
   min-height: 34px;
   padding: 0 8px;
   font-weight: 800;
+}
+
+.history-list {
+  display: grid;
+  gap: 8px;
+}
+
+.history-item {
+  display: grid;
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface-soft);
+}
+
+.history-item strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.history-meta {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.history-actions {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 6px;
+}
+
+.history-actions button {
+  min-height: 32px;
+  padding: 0 6px;
+  font-weight: 800;
+}
+
+.empty-note {
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.5;
 }
 
 .canvas-viewport {

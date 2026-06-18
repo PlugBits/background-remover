@@ -6,6 +6,11 @@ const MIN_ZOOM = 0.08;
 const MAX_ZOOM = 10;
 const INITIAL_ALPHA_THRESHOLD = 128;
 const OUTPUT_PADDING = 12;
+const HISTORY_DB_NAME = "product-photo-cleaner-history";
+const HISTORY_DB_VERSION = 1;
+const HISTORY_STORE = "items";
+const MAX_SAVED_HISTORY = 20;
+const HISTORY_ENABLED_KEY = "productPhotoCleaner.historyEnabled";
 
 const fileInput = document.getElementById("fileInput");
 const selectButton = document.getElementById("selectButton");
@@ -32,6 +37,10 @@ const rotateButtons = document.querySelectorAll("[data-rotate]");
 const rotateAngleLabel = document.getElementById("rotateAngleLabel");
 const copyButton = document.getElementById("copyButton");
 const saveButton = document.getElementById("saveButton");
+const historyEnabled = document.getElementById("historyEnabled");
+const historyList = document.getElementById("historyList");
+const historyEmpty = document.getElementById("historyEmpty");
+const clearHistoryButton = document.getElementById("clearHistoryButton");
 const viewport = document.getElementById("canvasViewport");
 const stack = document.getElementById("canvasStack");
 const outputCanvas = document.getElementById("outputCanvas");
@@ -58,6 +67,7 @@ let rightButtonPanning = false;
 let lastPointer = null;
 let polygonPoints = [];
 let toastTimer = null;
+let historyDbPromise = null;
 
 function setStatus(text, progress = null) {
   statusText.textContent = text;
@@ -139,7 +149,12 @@ async function loadFile(file) {
     setControlsEnabled(true);
     setTool("pan");
     setStatus("処理完了", 100);
-    showToast("背景削除が完了しました。");
+    if (historyEnabled.checked) {
+      const saved = await saveCurrentToHistory();
+      showToast(saved ? "背景削除が完了し、履歴に保存しました。" : "背景削除が完了しました。");
+    } else {
+      showToast("背景削除が完了しました。");
+    }
   } catch (error) {
     console.error(error);
     setStatus("処理に失敗しました。", 0);
@@ -614,15 +629,17 @@ function isCanvasControlTarget(target) {
   return Boolean(target.closest?.("button, select, input, .view-switch, .canvas-actions, .canvas-zoom, .canvas-rotate"));
 }
 
+function registerServiceWorker() {
+  if (!("serviceWorker" in navigator) || location.protocol === "file:") return;
+  navigator.serviceWorker.register("./sw.js").catch((error) => {
+    console.info("Service worker registration skipped.", error);
+  });
+}
+
 async function exportPng() {
   if (!state) return;
   const blob = await createOutputBlob(exportBackground.value);
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement("a");
-  link.href = url;
-  link.download = state.fileName.replace(/\.[^.]+$/, "_client_clean.png");
-  link.click();
-  setTimeout(() => URL.revokeObjectURL(url), 1000);
+  downloadBlob(blob, cleanFileName(state.fileName));
   showToast("PNGを保存しました。");
 }
 
@@ -642,6 +659,188 @@ async function copyTransparentPng() {
     console.error(error);
     showToast("コピーに失敗しました。");
   }
+}
+
+function downloadBlob(blob, fileName) {
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = fileName;
+  link.click();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+function cleanFileName(fileName) {
+  return fileName.replace(/\.[^.]+$/, "_client_clean.png");
+}
+
+function openHistoryDb() {
+  if (!("indexedDB" in window)) return Promise.reject(new Error("このブラウザは履歴保存に対応していません。"));
+  if (historyDbPromise) return historyDbPromise;
+  historyDbPromise = new Promise((resolve, reject) => {
+    const request = indexedDB.open(HISTORY_DB_NAME, HISTORY_DB_VERSION);
+    request.onupgradeneeded = () => {
+      const db = request.result;
+      if (!db.objectStoreNames.contains(HISTORY_STORE)) {
+        const store = db.createObjectStore(HISTORY_STORE, { keyPath: "id" });
+        store.createIndex("createdAt", "createdAt");
+      }
+    };
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => reject(request.error);
+  });
+  return historyDbPromise;
+}
+
+async function historyTx(mode, callback) {
+  const db = await openHistoryDb();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(HISTORY_STORE, mode);
+    const store = tx.objectStore(HISTORY_STORE);
+    const result = callback(store);
+    tx.oncomplete = () => resolve(result);
+    tx.onerror = () => reject(tx.error);
+    tx.onabort = () => reject(tx.error);
+  });
+}
+
+function requestResult(request) {
+  return new Promise((resolve, reject) => {
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => reject(request.error);
+  });
+}
+
+async function getHistoryItems() {
+  try {
+    const items = await historyTx("readonly", (store) => requestResult(store.getAll()));
+    return items.sort((a, b) => b.createdAt - a.createdAt);
+  } catch (error) {
+    console.error(error);
+    return [];
+  }
+}
+
+async function getHistoryItem(id) {
+  return historyTx("readonly", (store) => requestResult(store.get(id)));
+}
+
+async function saveCurrentToHistory() {
+  if (!state) return false;
+  const blob = await createOutputBlob("transparent");
+  const item = {
+    id: crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(16).slice(2)}`,
+    fileName: cleanFileName(state.fileName),
+    sourceName: state.fileName,
+    createdAt: Date.now(),
+    size: blob.size,
+    outputSize: outputSize.value,
+    blob
+  };
+  try {
+    await historyTx("readwrite", (store) => store.put(item));
+    await trimHistory();
+    await renderHistory();
+    return true;
+  } catch (error) {
+    console.error(error);
+    showToast("履歴保存に失敗しました。");
+    return false;
+  }
+}
+
+async function trimHistory() {
+  const items = await getHistoryItems();
+  const expired = items.slice(MAX_SAVED_HISTORY);
+  if (!expired.length) return;
+  await historyTx("readwrite", (store) => {
+    expired.forEach((item) => store.delete(item.id));
+  });
+}
+
+async function deleteHistoryItem(id) {
+  await historyTx("readwrite", (store) => store.delete(id));
+  await renderHistory();
+  showToast("履歴を削除しました。");
+}
+
+async function clearHistory() {
+  await historyTx("readwrite", (store) => store.clear());
+  await renderHistory();
+  showToast("履歴をすべて削除しました。");
+}
+
+async function copyHistoryItem(id) {
+  if (!navigator.clipboard || !window.ClipboardItem) {
+    showToast("このブラウザは画像コピーに対応していません。");
+    return;
+  }
+  const item = await getHistoryItem(id);
+  if (!item) return;
+  await navigator.clipboard.write([new ClipboardItem({ "image/png": item.blob })]);
+  showToast("履歴からコピーしました。");
+}
+
+async function saveHistoryItem(id) {
+  const item = await getHistoryItem(id);
+  if (!item) return;
+  downloadBlob(item.blob, item.fileName);
+  showToast("履歴からPNGを保存しました。");
+}
+
+async function renderHistory() {
+  const items = await getHistoryItems();
+  historyList.replaceChildren();
+  historyEmpty.hidden = items.length > 0;
+  clearHistoryButton.disabled = items.length === 0;
+  for (const item of items) {
+    const row = document.createElement("div");
+    row.className = "history-item";
+    row.dataset.id = item.id;
+
+    const title = document.createElement("strong");
+    title.textContent = item.sourceName || item.fileName;
+
+    const meta = document.createElement("div");
+    meta.className = "history-meta";
+    meta.textContent = `${formatDate(item.createdAt)} / ${formatBytes(item.size)} / ${item.outputSize || "標準"}`;
+
+    const actions = document.createElement("div");
+    actions.className = "history-actions";
+    actions.innerHTML = `
+      <button type="button" data-history-action="copy">コピー</button>
+      <button type="button" data-history-action="save">保存</button>
+      <button type="button" data-history-action="delete">削除</button>
+    `;
+
+    row.append(title, meta, actions);
+    historyList.append(row);
+  }
+}
+
+function formatDate(value) {
+  return new Intl.DateTimeFormat("ja-JP", {
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit"
+  }).format(new Date(value));
+}
+
+function formatBytes(bytes) {
+  if (bytes < 1024 * 1024) return `${Math.max(1, Math.round(bytes / 1024))}KB`;
+  return `${(bytes / 1024 / 1024).toFixed(1)}MB`;
+}
+
+async function initializeHistory() {
+  historyEnabled.checked = localStorage.getItem(HISTORY_ENABLED_KEY) === "1";
+  if (!("indexedDB" in window)) {
+    historyEnabled.disabled = true;
+    clearHistoryButton.disabled = true;
+    historyEmpty.textContent = "このブラウザは履歴保存に対応していません。";
+    return;
+  }
+  await renderHistory();
 }
 
 async function createOutputBlob(bg) {
@@ -870,6 +1069,21 @@ rotateButtons.forEach((button) => {
 });
 copyButton.addEventListener("click", copyTransparentPng);
 saveButton.addEventListener("click", exportPng);
+historyEnabled.addEventListener("change", () => {
+  localStorage.setItem(HISTORY_ENABLED_KEY, historyEnabled.checked ? "1" : "0");
+  showToast(historyEnabled.checked ? "履歴保存をONにしました。" : "履歴保存をOFFにしました。");
+});
+historyList.addEventListener("click", async (event) => {
+  const button = event.target.closest("button[data-history-action]");
+  if (!button) return;
+  const item = button.closest(".history-item");
+  if (!item) return;
+  const action = button.dataset.historyAction;
+  if (action === "copy") await copyHistoryItem(item.dataset.id);
+  if (action === "save") await saveHistoryItem(item.dataset.id);
+  if (action === "delete") await deleteHistoryItem(item.dataset.id);
+});
+clearHistoryButton.addEventListener("click", clearHistory);
 window.addEventListener("resize", () => {
   if (!state) return;
   resetView();
@@ -902,3 +1116,6 @@ document.addEventListener("keydown", (event) => {
     clearPolygon();
   }
 });
+
+registerServiceWorker();
+initializeHistory();

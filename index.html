@@ -73,6 +73,20 @@
           <strong>ネットワークについて</strong>
           <p>画像データは送信しません。モデルファイルの初回ダウンロードのみ通信が発生します。</p>
         </section>
+
+        <section class="panel history-panel">
+          <div class="panel-title">
+            <strong>背景除去履歴</strong>
+            <button id="clearHistoryButton" type="button">全削除</button>
+          </div>
+          <label class="check-row">
+            <input id="historyEnabled" type="checkbox">
+            <span>処理後PNGをこのブラウザに残す</span>
+          </label>
+          <p class="tool-help">保存した履歴はこの端末のブラウザ内だけに残ります。キャッシュ削除で消える場合があります。</p>
+          <div id="historyList" class="history-list"></div>
+          <p id="historyEmpty" class="empty-note">履歴はまだありません。</p>
+        </section>
       </aside>
 
       <section class="workspace">
