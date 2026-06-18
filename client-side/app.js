@@ -597,6 +597,13 @@ function applyCurrentPolygon() {
   if (currentTool === "polyBg") applyPolygon("bg");
 }
 
+function undoPolygonPoint() {
+  if (!polygonPoints.length) return false;
+  polygonPoints.pop();
+  renderInteraction();
+  return true;
+}
+
 function isTypingTarget(target) {
   if (!target) return false;
   const tag = target.tagName;
@@ -853,10 +860,7 @@ relabelButton.addEventListener("click", () => {
   showToast("島を再計算しました。");
 });
 applyPolygonButton.addEventListener("click", applyCurrentPolygon);
-undoPointButton.addEventListener("click", () => {
-  polygonPoints.pop();
-  renderInteraction();
-});
+undoPointButton.addEventListener("click", undoPolygonPoint);
 clearPolygonButton.addEventListener("click", clearPolygon);
 zoomOutButton.addEventListener("click", () => zoomAtCenter(zoom / 1.25));
 zoomInButton.addEventListener("click", () => zoomAtCenter(zoom * 1.25));
@@ -882,6 +886,7 @@ document.addEventListener("keydown", (event) => {
 
   if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "z") {
     event.preventDefault();
+    if ((currentTool === "polyFg" || currentTool === "polyBg") && undoPolygonPoint()) return;
     undoMaskEdit();
     return;
   }
