@@ -38,11 +38,12 @@
             <strong>マスク修正</strong>
             <span id="labelInfo">島: -</span>
           </div>
+          <p class="tool-help">消えた部品は「選んだ範囲を戻す」で囲むと元画像から戻せます。余計に残った背景は「選んだ範囲を消す」で囲んでください。</p>
           <div class="tool-grid">
-            <button type="button" class="active" data-tool="toggle">クリックトグル</button>
-            <button type="button" data-tool="rectFg">矩形を前景</button>
-            <button type="button" data-tool="rectBg">矩形を背景</button>
-            <button type="button" data-tool="threshold">範囲しきい値</button>
+            <button type="button" class="active" data-tool="toggle">島を切替</button>
+            <button type="button" data-tool="rectFg">選んだ範囲を戻す</button>
+            <button type="button" data-tool="rectBg">選んだ範囲を消す</button>
+            <button type="button" data-tool="threshold">選んだ範囲を締め直す</button>
             <button type="button" data-tool="pan">パン</button>
           </div>
 
@@ -69,12 +70,14 @@
             <strong>表示・出力</strong>
           </div>
           <label class="field">
-            <span>プレビュー背景</span>
+            <span>表示モード</span>
             <select id="previewBackground">
-              <option value="checker">透明市松</option>
-              <option value="white">白</option>
-              <option value="black">黒</option>
-              <option value="gray">検査グレー</option>
+              <option value="checker">結果: 透明市松</option>
+              <option value="white">結果: 白背景</option>
+              <option value="black">結果: 黒背景</option>
+              <option value="gray">結果: 検査グレー</option>
+              <option value="original">元画像</option>
+              <option value="compare">元画像 + 結果</option>
             </select>
           </label>
           <label class="field">

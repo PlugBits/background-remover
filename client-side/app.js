@@ -202,11 +202,27 @@ function renderOutput() {
   if (!state) return;
   const source = state.originalImageData.data;
   const output = outputCtx.createImageData(state.width, state.height);
+  const mode = previewBackground.value;
+
+  if (mode === "original") {
+    output.data.set(source);
+    outputCtx.putImageData(output, 0, 0);
+    return;
+  }
+
   for (let i = 0, p = 0; i < source.length; i += 4, p += 1) {
-    output.data[i] = source[i];
-    output.data[i + 1] = source[i + 1];
-    output.data[i + 2] = source[i + 2];
-    output.data[i + 3] = state.alphaMask[p];
+    if (mode === "compare") {
+      const kept = state.alphaMask[p] >= 128;
+      output.data[i] = kept ? source[i] : Math.round(source[i] * 0.34 + 255 * 0.66);
+      output.data[i + 1] = kept ? source[i + 1] : Math.round(source[i + 1] * 0.34 + 255 * 0.66);
+      output.data[i + 2] = kept ? source[i + 2] : Math.round(source[i + 2] * 0.34 + 255 * 0.66);
+      output.data[i + 3] = 255;
+    } else {
+      output.data[i] = source[i];
+      output.data[i + 1] = source[i + 1];
+      output.data[i + 2] = source[i + 2];
+      output.data[i + 3] = state.alphaMask[p];
+    }
   }
   outputCtx.putImageData(output, 0, 0);
 }
@@ -479,7 +495,9 @@ thresholdSlider.addEventListener("input", () => {
 
 showBoundary.addEventListener("change", renderBoundary);
 previewBackground.addEventListener("change", () => {
-  viewport.className = `canvas-viewport ${previewBackground.value}`;
+  const mode = previewBackground.value;
+  viewport.className = `canvas-viewport ${["original", "compare"].includes(mode) ? "checker" : mode}`;
+  renderAll();
 });
 undoButton.addEventListener("click", () => {
   if (!state || !state.history.length) return;

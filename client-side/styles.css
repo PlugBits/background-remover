@@ -203,6 +203,13 @@ h1 {
   gap: 8px;
 }
 
+.tool-help {
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.55;
+}
+
 .tool-grid button {
   min-height: 38px;
   padding: 0 10px;
