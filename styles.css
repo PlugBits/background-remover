@@ -157,6 +157,7 @@ details.panel {
 .history-drawer summary {
   display: flex;
   align-items: center;
+  justify-content: center;
   gap: 8px;
   cursor: pointer;
   font-weight: 900;
@@ -189,7 +190,7 @@ details.panel {
 }
 
 .history-panel {
-  width: min(360px, 24vw);
+  width: min(320px, 22vw);
   max-height: calc(100vh - 44px);
   overflow: auto;
   transition: width 0.18s ease;
@@ -197,14 +198,14 @@ details.panel {
 
 .history-panel:not([open]) {
   width: 48px;
-  min-height: 178px;
+  min-height: 110px;
   padding: 10px;
   overflow: hidden;
 }
 
 .history-panel:not([open]) summary {
   writing-mode: vertical-rl;
-  min-height: 150px;
+  min-height: 84px;
   justify-content: flex-start;
   white-space: nowrap;
 }
@@ -215,7 +216,7 @@ details.panel {
 
 .history-body {
   display: grid;
-  gap: 12px;
+  gap: 10px;
   margin-top: 12px;
 }
 
@@ -376,10 +377,10 @@ details.panel {
 
 .history-item {
   display: grid;
-  grid-template-columns: minmax(88px, 112px) minmax(0, 1fr);
+  grid-template-columns: 96px minmax(0, 1fr) 64px;
   gap: 8px;
   align-items: start;
-  padding: 10px;
+  padding: 8px;
   border: 1px solid var(--border);
   border-radius: var(--radius);
   background: var(--surface-soft);
@@ -401,7 +402,7 @@ details.panel {
   overflow: hidden;
   border: 1px solid var(--border);
   border-radius: var(--radius);
-  grid-row: span 2;
+  grid-row: 1 / span 2;
 }
 
 .history-thumb img {
@@ -420,15 +421,16 @@ details.panel {
 }
 
 .history-actions {
-  grid-column: 1 / -1;
+  grid-column: 3;
+  grid-row: 1 / span 2;
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: 1fr;
   gap: 6px;
   min-width: 0;
 }
 
 .history-actions button {
-  min-height: 32px;
+  min-height: 30px;
   padding: 0 6px;
   font-weight: 800;
 }

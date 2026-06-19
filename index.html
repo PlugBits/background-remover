@@ -124,17 +124,12 @@
 
       <aside class="history-sidebar">
         <details class="panel history-panel history-drawer">
-          <summary>背景除去履歴</summary>
+          <summary>履歴</summary>
           <div class="history-body">
             <div class="panel-title">
-              <span>コピー/PNG保存した完成形を残します。</span>
               <button id="clearHistoryButton" type="button">全削除</button>
             </div>
-            <label class="check-row">
-              <input id="historyEnabled" type="checkbox">
-              <span>完成PNGをこのブラウザに残す</span>
-            </label>
-            <p class="tool-help">保存した履歴はこの端末のブラウザ内だけに残ります。キャッシュ削除で消える場合があります。</p>
+            <input id="historyEnabled" type="checkbox" checked hidden>
             <div id="historyList" class="history-list"></div>
             <p id="historyEmpty" class="empty-note">履歴はまだありません。</p>
           </div>

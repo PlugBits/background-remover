@@ -864,7 +864,8 @@ function backgroundLabel(value) {
 }
 
 async function initializeHistory() {
-  historyEnabled.checked = localStorage.getItem(HISTORY_ENABLED_KEY) === "1";
+  historyEnabled.checked = true;
+  localStorage.setItem(HISTORY_ENABLED_KEY, "1");
   if (!("indexedDB" in window)) {
     historyEnabled.disabled = true;
     clearHistoryButton.disabled = true;
