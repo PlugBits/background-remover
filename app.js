@@ -814,13 +814,6 @@ async function renderHistory() {
     image.alt = item.sourceName || item.fileName;
     preview.append(image);
 
-    const title = document.createElement("strong");
-    title.textContent = item.sourceName || item.fileName;
-
-    const meta = document.createElement("div");
-    meta.className = "history-meta";
-    meta.textContent = `${formatDate(item.createdAt)} / ${item.action || "保存"} / ${backgroundLabel(item.background)} / ${formatBytes(item.size)} / ${item.outputSize || "標準"}`;
-
     const actions = document.createElement("div");
     actions.className = "history-actions";
     actions.innerHTML = `
@@ -829,7 +822,7 @@ async function renderHistory() {
       <button type="button" data-history-action="delete">削除</button>
     `;
 
-    row.append(preview, title, meta, actions);
+    row.append(preview, actions);
     historyList.append(row);
   }
 }

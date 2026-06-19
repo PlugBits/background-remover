@@ -377,21 +377,13 @@ details.panel {
 
 .history-item {
   display: grid;
-  grid-template-columns: 96px minmax(0, 1fr) 64px;
+  grid-template-columns: minmax(96px, 1fr) 64px;
   gap: 8px;
-  align-items: start;
+  align-items: stretch;
   padding: 8px;
   border: 1px solid var(--border);
   border-radius: var(--radius);
   background: var(--surface-soft);
-}
-
-.history-item strong {
-  grid-column: 2;
-  align-self: end;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 .history-thumb {
@@ -402,7 +394,6 @@ details.panel {
   overflow: hidden;
   border: 1px solid var(--border);
   border-radius: var(--radius);
-  grid-row: 1 / span 2;
 }
 
 .history-thumb img {
@@ -412,17 +403,7 @@ details.panel {
   object-fit: contain;
 }
 
-.history-meta {
-  grid-column: 2;
-  align-self: start;
-  color: var(--muted);
-  font-size: 12px;
-  font-weight: 700;
-}
-
 .history-actions {
-  grid-column: 3;
-  grid-row: 1 / span 2;
   display: grid;
   grid-template-columns: 1fr;
   gap: 6px;
@@ -678,8 +659,6 @@ details.panel {
   }
 
   .history-thumb,
-  .history-item strong,
-  .history-meta,
   .history-actions {
     grid-column: auto;
     grid-row: auto;
