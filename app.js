@@ -651,10 +651,13 @@ async function copyTransparentPng() {
     return;
   }
   try {
-    const blob = await createOutputBlob("transparent");
+    // Safari requires ClipboardItem to receive a Promise directly — awaiting the
+    // blob first causes the user-gesture context to expire before write() is called.
+    const blobPromise = createOutputBlob("transparent");
     await navigator.clipboard.write([
-      new ClipboardItem({ "image/png": blob })
+      new ClipboardItem({ "image/png": blobPromise })
     ]);
+    const blob = await blobPromise;
     const saved = await saveBlobToHistory(blob, {
       action: t("btnCopy"),
       background: "transparent"
@@ -733,16 +736,19 @@ async function getHistoryItem(id) {
 async function saveBlobToHistory(blob, details) {
   if (!state) return false;
   if (!historyEnabled.checked) return false;
+  // Store ArrayBuffer instead of Blob — Safari's IndexedDB doesn't persist Blob objects reliably.
+  const buffer = await blob.arrayBuffer();
   const item = {
     id: crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(16).slice(2)}`,
     fileName: cleanFileName(state.fileName),
     sourceName: state.fileName,
     createdAt: Date.now(),
     size: blob.size,
+    mimeType: blob.type || "image/png",
     outputSize: outputSize.value,
     action: details.action,
     background: details.background,
-    blob
+    buffer
   };
   try {
     await historyTx("readwrite", (store) => store.put(item));
@@ -777,6 +783,12 @@ async function clearHistory() {
   showToast(t("toast_histCleared"));
 }
 
+function itemToBlob(item) {
+  const mime = item.mimeType || "image/png";
+  if (item.buffer) return new Blob([item.buffer], { type: mime });
+  return item.blob || new Blob([], { type: mime });
+}
+
 async function copyHistoryItem(id) {
   if (!navigator.clipboard || !window.ClipboardItem) {
     showToast(t("toast_noCopy"));
@@ -784,14 +796,15 @@ async function copyHistoryItem(id) {
   }
   const item = await getHistoryItem(id);
   if (!item) return;
-  await navigator.clipboard.write([new ClipboardItem({ "image/png": item.blob })]);
+  const blob = itemToBlob(item);
+  await navigator.clipboard.write([new ClipboardItem({ "image/png": blob })]);
   showToast(t("toast_histCopied"));
 }
 
 async function saveHistoryItem(id) {
   const item = await getHistoryItem(id);
   if (!item) return;
-  downloadBlob(item.blob, item.fileName);
+  downloadBlob(itemToBlob(item), item.fileName);
   showToast(t("toast_histSaved"));
 }
 
@@ -809,7 +822,7 @@ async function renderHistory() {
     const preview = document.createElement("div");
     preview.className = "history-thumb checker";
     const image = document.createElement("img");
-    const url = URL.createObjectURL(item.blob);
+    const url = URL.createObjectURL(itemToBlob(item));
     historyPreviewUrls.push(url);
     image.src = url;
     image.alt = item.sourceName || item.fileName;
