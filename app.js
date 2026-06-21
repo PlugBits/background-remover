@@ -45,12 +45,14 @@ const clearHistoryButton = document.getElementById("clearHistoryButton");
 const viewport = document.getElementById("canvasViewport");
 const stack = document.getElementById("canvasStack");
 const outputCanvas = document.getElementById("outputCanvas");
+const copyCanvas = document.getElementById("copyCanvas");
 const boundaryCanvas = document.getElementById("boundaryCanvas");
 const interactionCanvas = document.getElementById("interactionCanvas");
 const emptyState = document.getElementById("emptyState");
 const toast = document.getElementById("toast");
 
 const outputCtx = outputCanvas.getContext("2d");
+const copyCtx = copyCanvas.getContext("2d");
 const boundaryCtx = boundaryCanvas.getContext("2d");
 const interactionCtx = interactionCanvas.getContext("2d");
 const tempCanvas = document.createElement("canvas");
@@ -64,7 +66,8 @@ let zoom = 1;
 let panX = 0;
 let panY = 0;
 let dragging = false;
-let rightButtonPanning = false;
+let middleButtonPanning = false;
+let shiftPanning = false;
 let lastPointer = null;
 let polygonPoints = [];
 let toastTimer = null;
@@ -94,14 +97,16 @@ function setTool(tool) {
 }
 
 function updateCanvasCursor() {
-  const cursor = currentTool === "pan" ? "grab" : "pointer";
-  if (rightButtonPanning) {
-    interactionCanvas.style.cursor = "grabbing";
-    viewport.style.cursor = "grabbing";
+  let cursor;
+  if (middleButtonPanning || shiftPanning) {
+    cursor = "grabbing";
+  } else if (currentTool === "pan") {
+    cursor = "grab";
   } else {
-    interactionCanvas.style.cursor = cursor;
-    viewport.style.cursor = cursor;
+    cursor = "pointer";
   }
+  copyCanvas.style.cursor = cursor;
+  viewport.style.cursor = cursor;
 }
 
 function setControlsEnabled(enabled) {
@@ -192,7 +197,7 @@ async function initializeMaskFromBlob(blob) {
 }
 
 function sizeCanvases(width, height) {
-  [outputCanvas, boundaryCanvas, interactionCanvas].forEach((canvas) => {
+  [outputCanvas, copyCanvas, boundaryCanvas, interactionCanvas].forEach((canvas) => {
     canvas.width = width;
     canvas.height = height;
     canvas.style.width = `${width}px`;
@@ -249,8 +254,22 @@ function relabel() {
 
 function renderAll() {
   renderOutput();
+  updateCopyCanvas();
   renderBoundary();
   renderInteraction();
+}
+
+function updateCopyCanvas() {
+  if (!state) return;
+  const source = state.originalImageData.data;
+  const output = copyCtx.createImageData(state.width, state.height);
+  for (let i = 0, p = 0; i < source.length; i += 4, p += 1) {
+    output.data[i] = source[i];
+    output.data[i + 1] = source[i + 1];
+    output.data[i + 2] = source[i + 2];
+    output.data[i + 3] = state.alphaMask[p];
+  }
+  copyCtx.putImageData(output, 0, 0);
 }
 
 function renderOutput() {
@@ -438,9 +457,9 @@ function clearPolygon() {
 }
 
 function canvasPoint(event) {
-  const rect = interactionCanvas.getBoundingClientRect();
-  const rawX = (event.clientX - rect.left) * (interactionCanvas.width / rect.width);
-  const rawY = (event.clientY - rect.top) * (interactionCanvas.height / rect.height);
+  const rect = copyCanvas.getBoundingClientRect();
+  const rawX = (event.clientX - rect.left) * (copyCanvas.width / rect.width);
+  const rawY = (event.clientY - rect.top) * (copyCanvas.height / rect.height);
   return {
     x: clamp(Math.floor(rawX), 0, state.width - 1),
     y: clamp(Math.floor(rawY), 0, state.height - 1),
@@ -647,11 +666,9 @@ async function exportPng() {
 function copyTransparentPng() {
   if (!state) return;
   if (!navigator.clipboard || !window.ClipboardItem) {
-    showToast(t("toast_noCopy"));
+    showToast(t("toast_copyHint"));
     return;
   }
-  // Keep this function non-async so Safari's user-gesture context stays active
-  // when navigator.clipboard.write() is called synchronously below.
   const blobPromise = createOutputBlob("transparent");
   navigator.clipboard.write([
     new ClipboardItem({ "image/png": blobPromise })
@@ -662,22 +679,9 @@ function copyTransparentPng() {
       background: "transparent"
     });
     showToast(saved ? t("toast_copiedHistory") : t("toast_copied"));
-  }).catch(async (error) => {
+  }).catch(error => {
     console.error("clipboard.write failed:", error);
-    // Fallback for browsers that don't support Promise-based ClipboardItem (older Safari):
-    // resolve the blob first then retry once.
-    try {
-      const blob = await blobPromise;
-      await navigator.clipboard.write([new ClipboardItem({ "image/png": blob })]);
-      const saved = await saveBlobToHistory(blob, {
-        action: t("btnCopy"),
-        background: "transparent"
-      });
-      showToast(saved ? t("toast_copiedHistory") : t("toast_copied"));
-    } catch (fallbackError) {
-      console.error("clipboard fallback failed:", fallbackError);
-      showToast(t("toast_copyFail"));
-    }
+    showToast(t("toast_copyHint"));
   });
 }
 
@@ -806,23 +810,14 @@ function copyHistoryItem(id) {
     showToast(t("toast_noCopy"));
     return;
   }
-  // Non-async: call clipboard.write() synchronously to preserve Safari's user-gesture context.
   const blobPromise = getHistoryItem(id).then(item => item ? itemToBlob(item) : null);
   navigator.clipboard.write([
     new ClipboardItem({ "image/png": blobPromise })
   ]).then(() => {
     showToast(t("toast_histCopied"));
-  }).catch(async (error) => {
+  }).catch(error => {
     console.error("clipboard.write failed:", error);
-    try {
-      const blob = await blobPromise;
-      if (!blob) return;
-      await navigator.clipboard.write([new ClipboardItem({ "image/png": blob })]);
-      showToast(t("toast_histCopied"));
-    } catch (fallbackError) {
-      console.error("clipboard fallback failed:", fallbackError);
-      showToast(t("toast_copyFail"));
-    }
+    showToast(t("toast_copyFail"));
   });
 }
 
@@ -1032,7 +1027,7 @@ viewport.addEventListener("pointermove", (event) => {
   if (!state) return;
   if (isCanvasControlTarget(event.target) && !dragging) return;
   const point = canvasPoint(event);
-  if (dragging && (currentTool === "pan" || rightButtonPanning)) {
+  if (dragging && (currentTool === "pan" || middleButtonPanning || shiftPanning)) {
     panX += event.clientX - lastPointer.x;
     panY += event.clientY - lastPointer.y;
     lastPointer = { x: event.clientX, y: event.clientY };
@@ -1073,18 +1068,29 @@ viewport.addEventListener("pointermove", (event) => {
 viewport.addEventListener("pointerdown", (event) => {
   if (!state) return;
   if (isCanvasControlTarget(event.target)) return;
-  viewport.setPointerCapture(event.pointerId);
-  dragging = true;
-  lastPointer = { x: event.clientX, y: event.clientY };
-  if (event.button === 2) {
-    rightButtonPanning = true;
+
+  if (event.button === 1) {
+    event.preventDefault();
+    viewport.setPointerCapture(event.pointerId);
+    dragging = true;
+    middleButtonPanning = true;
+    lastPointer = { x: event.clientX, y: event.clientY };
     updateCanvasCursor();
     return;
   }
-  if (event.button !== 0) {
-    dragging = false;
+
+  if (event.button !== 0) return;
+
+  viewport.setPointerCapture(event.pointerId);
+  dragging = true;
+  lastPointer = { x: event.clientX, y: event.clientY };
+
+  if (event.shiftKey) {
+    shiftPanning = true;
+    updateCanvasCursor();
     return;
   }
+
   if (currentTool === "pan") return;
   const point = canvasPoint(event);
   if (currentTool === "polyFg" || currentTool === "polyBg") {
@@ -1102,7 +1108,8 @@ viewport.addEventListener("pointerdown", (event) => {
 viewport.addEventListener("pointerup", () => {
   if (!state) return;
   dragging = false;
-  rightButtonPanning = false;
+  middleButtonPanning = false;
+  shiftPanning = false;
   updateCanvasCursor();
 });
 
@@ -1114,11 +1121,13 @@ viewport.addEventListener("dblclick", (event) => {
 
 viewport.addEventListener("pointercancel", () => {
   dragging = false;
-  rightButtonPanning = false;
+  middleButtonPanning = false;
+  shiftPanning = false;
   updateCanvasCursor();
 });
 
 viewport.addEventListener("contextmenu", (event) => {
+  if (state && event.target === copyCanvas) return;
   event.preventDefault();
 });
 

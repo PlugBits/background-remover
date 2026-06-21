@@ -593,8 +593,13 @@ details.panel {
   display: block;
 }
 
-#interactionCanvas {
-  cursor: pointer;
+#interactionCanvas,
+#boundaryCanvas {
+  pointer-events: none;
+}
+
+#copyCanvas {
+  cursor: grab;
 }
 
 .empty-state {

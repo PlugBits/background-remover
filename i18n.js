@@ -88,6 +88,7 @@ const I18N = {
     toast_convertFail:    '画像の変換に失敗しました。',
     toast_histOn:         '履歴保存をONにしました。',
     toast_histOff:        '履歴保存をOFFにしました。',
+    toast_copyHint:       'コピーできませんでした。キャンバスを右クリックして「画像をコピー」を選択してください。',
 
     status_loading:  '画像を読み込んでいます。',
     status_removing: 'ブラウザ内モデルで背景を削除しています。',
@@ -193,6 +194,7 @@ const I18N = {
     toast_convertFail:    'Image conversion failed.',
     toast_histOn:         'History saving enabled.',
     toast_histOff:        'History saving disabled.',
+    toast_copyHint:       'Copy failed. Right-click the canvas and choose "Copy Image".',
 
     status_loading:  'Loading image…',
     status_removing: 'Removing background in-browser…',
@@ -298,6 +300,7 @@ const I18N = {
     toast_convertFail:    'การแปลงภาพล้มเหลว',
     toast_histOn:         'เปิดการบันทึกประวัติแล้ว',
     toast_histOff:        'ปิดการบันทึกประวัติแล้ว',
+    toast_copyHint:       'คัดลอกไม่สำเร็จ คลิกขวาที่ Canvas แล้วเลือก "คัดลอกภาพ"',
 
     status_loading:  'กำลังโหลดภาพ…',
     status_removing: 'กำลังลบพื้นหลังในเบราว์เซอร์…',
@@ -403,6 +406,7 @@ const I18N = {
     toast_convertFail:    'Konversi gambar gagal.',
     toast_histOn:         'Penyimpanan riwayat diaktifkan.',
     toast_histOff:        'Penyimpanan riwayat dinonaktifkan.',
+    toast_copyHint:       'Gagal menyalin. Klik kanan kanvas dan pilih "Salin Gambar".',
 
     status_loading:  'Memuat gambar…',
     status_removing: 'Menghapus latar di browser…',
@@ -508,6 +512,7 @@ const I18N = {
     toast_convertFail:    '图片转换失败。',
     toast_histOn:         '已启用历史记录保存。',
     toast_histOff:        '已禁用历史记录保存。',
+    toast_copyHint:       '复制失败。请右键单击画布并选择"拷贝图像"。',
 
     status_loading:  '正在加载图片…',
     status_removing: '正在浏览器内去除背景…',
