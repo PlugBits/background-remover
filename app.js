@@ -45,14 +45,12 @@ const clearHistoryButton = document.getElementById("clearHistoryButton");
 const viewport = document.getElementById("canvasViewport");
 const stack = document.getElementById("canvasStack");
 const outputCanvas = document.getElementById("outputCanvas");
-const copyCanvas = document.getElementById("copyCanvas");
 const boundaryCanvas = document.getElementById("boundaryCanvas");
 const interactionCanvas = document.getElementById("interactionCanvas");
 const emptyState = document.getElementById("emptyState");
 const toast = document.getElementById("toast");
 
 const outputCtx = outputCanvas.getContext("2d");
-const copyCtx = copyCanvas.getContext("2d");
 const boundaryCtx = boundaryCanvas.getContext("2d");
 const interactionCtx = interactionCanvas.getContext("2d");
 const tempCanvas = document.createElement("canvas");
@@ -68,6 +66,7 @@ let panY = 0;
 let dragging = false;
 let middleButtonPanning = false;
 let shiftPanning = false;
+let rightButtonPanning = false;
 let lastPointer = null;
 let polygonPoints = [];
 let toastTimer = null;
@@ -98,14 +97,14 @@ function setTool(tool) {
 
 function updateCanvasCursor() {
   let cursor;
-  if (middleButtonPanning || shiftPanning) {
+  if (rightButtonPanning || middleButtonPanning || shiftPanning) {
     cursor = "grabbing";
   } else if (currentTool === "pan") {
     cursor = "grab";
   } else {
     cursor = "pointer";
   }
-  copyCanvas.style.cursor = cursor;
+  interactionCanvas.style.cursor = cursor;
   viewport.style.cursor = cursor;
 }
 
@@ -197,7 +196,7 @@ async function initializeMaskFromBlob(blob) {
 }
 
 function sizeCanvases(width, height) {
-  [outputCanvas, copyCanvas, boundaryCanvas, interactionCanvas].forEach((canvas) => {
+  [outputCanvas, boundaryCanvas, interactionCanvas].forEach((canvas) => {
     canvas.width = width;
     canvas.height = height;
     canvas.style.width = `${width}px`;
@@ -254,22 +253,8 @@ function relabel() {
 
 function renderAll() {
   renderOutput();
-  updateCopyCanvas();
   renderBoundary();
   renderInteraction();
-}
-
-function updateCopyCanvas() {
-  if (!state) return;
-  const source = state.originalImageData.data;
-  const output = copyCtx.createImageData(state.width, state.height);
-  for (let i = 0, p = 0; i < source.length; i += 4, p += 1) {
-    output.data[i] = source[i];
-    output.data[i + 1] = source[i + 1];
-    output.data[i + 2] = source[i + 2];
-    output.data[i + 3] = state.alphaMask[p];
-  }
-  copyCtx.putImageData(output, 0, 0);
 }
 
 function renderOutput() {
@@ -457,9 +442,9 @@ function clearPolygon() {
 }
 
 function canvasPoint(event) {
-  const rect = copyCanvas.getBoundingClientRect();
-  const rawX = (event.clientX - rect.left) * (copyCanvas.width / rect.width);
-  const rawY = (event.clientY - rect.top) * (copyCanvas.height / rect.height);
+  const rect = interactionCanvas.getBoundingClientRect();
+  const rawX = (event.clientX - rect.left) * (interactionCanvas.width / rect.width);
+  const rawY = (event.clientY - rect.top) * (interactionCanvas.height / rect.height);
   return {
     x: clamp(Math.floor(rawX), 0, state.width - 1),
     y: clamp(Math.floor(rawY), 0, state.height - 1),
@@ -1027,7 +1012,7 @@ viewport.addEventListener("pointermove", (event) => {
   if (!state) return;
   if (isCanvasControlTarget(event.target) && !dragging) return;
   const point = canvasPoint(event);
-  if (dragging && (currentTool === "pan" || middleButtonPanning || shiftPanning)) {
+  if (dragging && (currentTool === "pan" || rightButtonPanning || middleButtonPanning || shiftPanning)) {
     panX += event.clientX - lastPointer.x;
     panY += event.clientY - lastPointer.y;
     lastPointer = { x: event.clientX, y: event.clientY };
@@ -1069,6 +1054,15 @@ viewport.addEventListener("pointerdown", (event) => {
   if (!state) return;
   if (isCanvasControlTarget(event.target)) return;
 
+  if (event.button === 2) {
+    viewport.setPointerCapture(event.pointerId);
+    dragging = true;
+    rightButtonPanning = true;
+    lastPointer = { x: event.clientX, y: event.clientY };
+    updateCanvasCursor();
+    return;
+  }
+
   if (event.button === 1) {
     event.preventDefault();
     viewport.setPointerCapture(event.pointerId);
@@ -1108,6 +1102,7 @@ viewport.addEventListener("pointerdown", (event) => {
 viewport.addEventListener("pointerup", () => {
   if (!state) return;
   dragging = false;
+  rightButtonPanning = false;
   middleButtonPanning = false;
   shiftPanning = false;
   updateCanvasCursor();
@@ -1121,13 +1116,13 @@ viewport.addEventListener("dblclick", (event) => {
 
 viewport.addEventListener("pointercancel", () => {
   dragging = false;
+  rightButtonPanning = false;
   middleButtonPanning = false;
   shiftPanning = false;
   updateCanvasCursor();
 });
 
 viewport.addEventListener("contextmenu", (event) => {
-  if (state && event.target === copyCanvas) return;
   event.preventDefault();
 });
 
