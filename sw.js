@@ -1,4 +1,4 @@
-const CACHE_NAME = "product-photo-cleaner-v3";
+const CACHE_NAME = "product-photo-cleaner-v4";
 const STATIC_FILES = [
   "./",
   "./index.html",
