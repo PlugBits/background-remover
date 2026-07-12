@@ -546,7 +546,6 @@ export function applyLanguage(lang) {
   currentLang = lang;
   localStorage.setItem(STORAGE_KEY, lang);
   document.documentElement.lang = lang;
-  document.title = t('title');
 
   document.querySelectorAll('[data-i18n]').forEach(el => {
     el.textContent = t(el.dataset.i18n);
